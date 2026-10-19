@@ -1,0 +1,7 @@
+# executables
+*.exe
+hello
+
+# cache
+.cache
+compile_commands.json

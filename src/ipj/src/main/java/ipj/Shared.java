@@ -42,10 +42,8 @@ public abstract class Shared implements AutoCloseable {
 		return instance;
 	}
 
-	public static void release(Shared obj) {}
-
 	@Override
-	public void close() { release(this); }
+	public void close() {}
 
 	@Override
 	public String toString() {
