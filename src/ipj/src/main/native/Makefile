@@ -1,1 +1,1 @@
-CFLAGS+=-std=c11 -Wall -Wpedantic -Iinclude
+CFLAGS+=-std=c11 -Wall -Wpedantic -Iinclude -Iinclude-private
