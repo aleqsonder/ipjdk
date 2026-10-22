@@ -24,6 +24,10 @@ struct ipj_obj *ipj_obj_map_provide(
 	const char *id,
 	size_t size);
 
+struct ipj_obj *ipj_obj_map_search(
+	const struct ipj_obj_map *,
+	const char *id);
+
 void ipj_obj_map_erase(struct ipj_obj_map *, const char *id);
 
 #endif
