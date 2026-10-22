@@ -17,6 +17,8 @@ struct ipj_obj ipj_obj_add_ref(struct ipj_obj *);
 // returns true on refcount==0
 bool ipj_obj_release(struct ipj_obj *);
 
-char *ipj_obj_id(const struct ipj_obj *obj);
+#define ipj_obj_payload(OBJ_PTR) ((void *)(OBJ_PTR)->payload_and_id)
+#define ipj_obj_id(OBJ_PTR) \
+	((char *)(OBJ_PTR)->payload_and_id + (OBJ_PTR)->payload_size)
 
 #endif

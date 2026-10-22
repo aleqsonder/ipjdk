@@ -28,9 +28,3 @@ void ipj_obj_init(
 	char *const stored_id = ipj_obj_id(obj);
 	strcpy(stored_id, id);
 }
-
-char *ipj_obj_id(const struct ipj_obj *obj) {
-	assert(obj);
-
-	return (char *)obj->payload_and_id + obj->payload_size;
-}

@@ -73,7 +73,7 @@ struct ipj_obj *ipj_obj_map_provide(
 	struct ipj_allocator *const allocator = map->allocator;
 	struct ipj_obj_map_shared_state *const state = map->shared_state;
 
-	const size_t cell_count = state->_elem_count;
+	size_t cell_count = state->_elem_count;
 	hmap_cell_t *const cells = (hmap_cell_t *)state->arena;
 	uint8_t *const objbuf = allocator->arena;
 
@@ -87,6 +87,7 @@ struct ipj_obj *ipj_obj_map_provide(
 			return NULL;
 
 		hmap_rehash(cell_count, new_cell_count, cells, objbuf);
+		state->_elem_count = cell_count = new_cell_count;
 		found = hmap_probe(cell_count, cells, objbuf, id);
 	}
 
@@ -121,7 +122,7 @@ struct ipj_obj *ipj_obj_map_search(
 
 	const size_t found = hmap_probe(cell_count, cells, objbuf, id);
 
-	return found == cell_count
+	return found == cell_count || cells[found] == EMPTY_HMAP_CELL
 		? NULL
 		: (struct ipj_obj *)((uint8_t *)objbuf + cells[found]);
 }

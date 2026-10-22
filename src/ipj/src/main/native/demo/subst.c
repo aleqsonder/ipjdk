@@ -36,18 +36,15 @@ int main(int argc, char **argv) {
 		struct ipj_obj *const
 			obj = ipj_obj_map_provide(&map, key, strlen(value)+1);
 
-		strcpy((char *)obj->payload_and_id, value);
+		strcpy(ipj_obj_payload(obj), value);
 	}
 
 	char buf[BUFSIZE];
 	while (fgets(buf, BUFSIZE, stdin)) {
 		const char *id = buf;
-		for (size_t i = 0; i < BUFSIZE; ++i) {
+		for (size_t i = 0; i < BUFSIZE && buf[i]; ++i) {
 			const char c = buf[i];
 			switch ((id == NULL) + isalpha(c)) {
-			case 2:
-				id = buf + i;
-				break;
 			case 0:
 				buf[i] = '\0';
 
@@ -55,12 +52,18 @@ int main(int argc, char **argv) {
 				obj = ipj_obj_map_search(&map, id);
 
 				const char *value = obj
-					? (char *)obj->payload_and_id
+					? (char *)ipj_obj_payload(obj)
 					: id;
 
 				printf("%s%c", value, c);
 				id = NULL;
+
+				buf[i] = c;
+
 				break;
+			case 2:
+				id = buf + i;
+				// no break
 			default:
 				fputc(c, stdout);
 			}
