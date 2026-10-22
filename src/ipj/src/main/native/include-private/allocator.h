@@ -1,22 +1,18 @@
 #ifndef IPJ_ALLOCATOR_H
 #define IPJ_ALLOCATOR_H
 
-#include <stddef.h>
+#include <stdint.h>
 
-typedef struct {
-	struct ipj_allocator_shared_state *shared_state;
-	void *arena;
-} ipj_allocator_t;
+struct ipj_allocator {
+	// bump-allocator
+	uint32_t capacity, refcount, _bump;
+	uint8_t arena[];
+};
 
-void ipj_allocator_init(ipj_allocator_t *, size_t capacity, void *arena);
-void ipj_allocator_destroy(ipj_allocator_t *);
+void ipj_allocator_init(struct ipj_allocator *, size_t capacity);
 
-void ipj_allocator_add_ref(ipj_allocator_t *);
-
-// returns non-zero on refcount==0
-int ipj_allocator_release(ipj_allocator_t *);
-
-void *ipj_alloc(ipj_allocator_t *, size_t size);
-void ipj_free(ipj_allocator_t *, void *mem);
+void *ipj_alloc(struct ipj_allocator *, size_t size);
+void ipj_free(struct ipj_allocator *, void *mem);
+#define ipj_mem_offset(ALLOCATOR, MEM) ((uint8_t *)(MEM) - (ALLOCATOR)->arena)
 
 #endif
