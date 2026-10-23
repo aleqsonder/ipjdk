@@ -1,23 +1,25 @@
-#include <stddef.h>
+#include <stdint.h>
 #include <assert.h>
 
 #include "allocator.h"
 
-void ipj_allocator_init(
-	struct ipj_allocator *allocator,
-	size_t capacity
-) {
-	assert(allocator);
+struct ipj_allocator {
+	uint32_t capacity, _bump;
+	uint8_t arena[];
+};
 
+struct ipj_allocator *ipj_allocator_markup(size_t bufsize, void *buf) {
+	assert(bufsize == 0 || buf);
+
+	if (bufsize < sizeof(struct ipj_allocator))
+		return NULL;
+
+	struct ipj_allocator *const allocator = buf;
 	*allocator = (struct ipj_allocator) {
-		.capacity = capacity,
-		.refcount = 1,
+		.capacity = bufsize,
 		._bump = 0 };
-}
 
-// no-op
-void ipj_allocator_destroy(struct ipj_allocator *allocator) {
-	(void)allocator;
+	return allocator;
 }
 
 void *ipj_alloc(struct ipj_allocator *allocator, size_t size) {
@@ -38,4 +40,27 @@ void *ipj_alloc(struct ipj_allocator *allocator, size_t size) {
 void ipj_free(struct ipj_allocator *allocator, void *mem) {
 	(void)allocator;
 	(void)mem;
+}
+
+ptrdiff_t ipj_mem_offset(
+	const ipj_allocator_t *allocator,
+	const void *mem
+) {
+	assert(allocator);
+	assert(mem);
+
+	return (const uint8_t *)mem - allocator->arena;
+}
+
+void *ipj_offset_resolve(ipj_allocator_t *allocator, ptrdiff_t offset) {
+	assert(allocator);
+	return allocator->arena + offset;
+}
+
+const void *ipj_offset_resolve_const(
+	const ipj_allocator_t *allocator,
+	ptrdiff_t offset
+) {
+	assert(allocator);
+	return allocator->arena + offset;
 }
