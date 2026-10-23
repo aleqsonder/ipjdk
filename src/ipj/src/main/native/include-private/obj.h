@@ -1,24 +1,26 @@
 #ifndef IPJ_OBJ_H
 #define IPJ_OBJ_H
 
-#include <stdint.h>
-#include <stdbool.h>
+#include <stddef.h>
+#include <string.h>
 
-struct ipj_obj {
-	uint16_t refcount, payload_size;
-	uint8_t payload_and_id[];
-};
+typedef struct ipj_obj ipj_obj_t;
+extern const size_t IPJ_OBJ_HEAD_SIZE;
 
-size_t ipj_obj_full_size(size_t payload_size, const char *id);
-void ipj_obj_init(struct ipj_obj *, size_t payload_size, const char *id);
+#define ipj_obj_size(PAYLOAD_SIZE, ID) \
+	(IPJ_OBJ_HEAD_SIZE + (PAYLOAD_SIZE) + strlen(ID)+1)
 
-struct ipj_obj ipj_obj_add_ref(struct ipj_obj *);
+ipj_obj_t *ipj_obj_markup(
+	void *buf,
+	size_t payload_size,
+	const void *payload,
+	const char *id);
 
-// returns true on refcount==0
-bool ipj_obj_release(struct ipj_obj *);
+char *ipj_obj_id(ipj_obj_t *);
+const char *ipj_obj_id_const(const ipj_obj_t *);
 
-#define ipj_obj_payload(OBJ_PTR) ((void *)(OBJ_PTR)->payload_and_id)
-#define ipj_obj_id(OBJ_PTR) \
-	((char *)(OBJ_PTR)->payload_and_id + (OBJ_PTR)->payload_size)
+// Returns payload size and sets *payload (if payload!=NULL)
+size_t ipj_obj_payload(ipj_obj_t *, void **payload);
+size_t ipj_obj_payload_const(const ipj_obj_t *, const void **payload);
 
 #endif

@@ -1,30 +1,61 @@
+#include <stdint.h>
 #include <assert.h>
-#include <string.h>
 
 #include "obj.h"
 
+struct ipj_obj {
+	uint32_t payload_size;
+	uint8_t payload_and_id[];
+};
 
-size_t ipj_obj_full_size(size_t payload_size, const char *id) {
-	assert(id);
+const size_t IPJ_OBJ_HEAD_SIZE = sizeof(struct ipj_obj);
 
-	if (payload_size == 0)
-		return 0;
-
-	return sizeof(struct ipj_obj) + payload_size + strlen(id)+1;
-}
-
-void ipj_obj_init(
-	struct ipj_obj *obj,
+ipj_obj_t *ipj_obj_markup(
+	void *buf,
 	size_t payload_size,
+	const void *payload,
 	const char *id
 ) {
-	assert(obj);
+	assert(buf);
 	assert(id);
 
-	*obj = (struct ipj_obj) {
-		.refcount = 1,
-		.payload_size = payload_size };
+	ipj_obj_t *const obj = buf;
+	*obj = (ipj_obj_t) { .payload_size = payload_size };
+
+	if (payload)
+		memcpy(obj->payload_and_id, payload, payload_size);
 
 	char *const stored_id = ipj_obj_id(obj);
 	strcpy(stored_id, id);
+
+	return obj;
+}
+
+char *ipj_obj_id(ipj_obj_t *obj) {
+	assert(obj);
+	return (char *)obj->payload_and_id + obj->payload_size;
+}
+
+const char *ipj_obj_id_const(const ipj_obj_t *obj) {
+	assert(obj);
+	return (char *)obj->payload_and_id + obj->payload_size;
+}
+
+size_t ipj_obj_payload(ipj_obj_t *obj, void **payload) {
+	assert(obj);
+
+	if (payload)
+		*payload = obj->payload_and_id;
+	return obj->payload_size;
+}
+
+size_t ipj_obj_payload_const(
+	const ipj_obj_t *obj,
+	const void **payload
+) {
+	assert(obj);
+
+	if (payload)
+		*payload = obj->payload_and_id;
+	return obj->payload_size;
 }
