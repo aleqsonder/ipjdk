@@ -40,7 +40,7 @@ START_TEST(alloc_too_much) {
 
 START_TEST(offset) {
 	void *const mem = ipj_alloc(allocator, BUFSIZE / 2);
-	const ptrdiff_t offset = ipj_mem_offset(allocator, mem);
+	const ipj_offset_t offset = ipj_mem_offset(allocator, mem);
 
 	void *const restored_mem = ipj_offset_resolve(allocator, offset);
 	ck_assert_ptr_eq(mem, restored_mem);
@@ -50,6 +50,25 @@ START_TEST(offset) {
 	ck_assert_ptr_eq(mem, restored_const_mem);
 } END_TEST
 
+START_TEST(offset_of_NULL) {
+	const ipj_offset_t offset = ipj_mem_offset(allocator, NULL);
+	ck_assert(offset == IPJ_INVALID_OFFSET);
+} END_TEST
+
+START_TEST(offset_of_out_of_range) {
+	const ipj_offset_t offset = ipj_mem_offset(allocator, buf + BUFSIZE);
+	ck_assert(offset == IPJ_INVALID_OFFSET);
+} END_TEST
+
+START_TEST(resolve_out_of_range) {
+	void *const mem = ipj_offset_resolve(allocator, BUFSIZE);
+	ck_assert_ptr_null(mem);
+} END_TEST
+
+START_TEST(resolve_INVALID_OFFSET) {
+	void *const mem = ipj_offset_resolve(allocator, IPJ_INVALID_OFFSET);
+	ck_assert_ptr_null(mem);
+} END_TEST
 
 int main(void) {
 	TCase *const fixtureless_tc = tcase_create("fixtureless");
@@ -62,6 +81,10 @@ int main(void) {
 	tcase_add_test(main_tc, alloc0);
 	tcase_add_test(main_tc, alloc_too_much);
 	tcase_add_test(main_tc, offset);
+	tcase_add_test(main_tc, offset_of_NULL);
+	tcase_add_test(main_tc, offset_of_out_of_range);
+	tcase_add_test(main_tc, resolve_out_of_range);
+	tcase_add_test(main_tc, resolve_INVALID_OFFSET);
 
 	Suite *const s = suite_create("allocator");
 	suite_add_tcase(s, main_tc);

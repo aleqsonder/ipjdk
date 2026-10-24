@@ -16,7 +16,7 @@ struct ipj_allocator *ipj_allocator_markup(size_t bufsize, void *buf) {
 
 	struct ipj_allocator *const allocator = buf;
 	*allocator = (struct ipj_allocator) {
-		.capacity = bufsize,
+		.capacity = bufsize - sizeof(struct ipj_allocator),
 		._bump = 0 };
 
 	return allocator;
@@ -47,14 +47,19 @@ ptrdiff_t ipj_mem_offset(
 	const void *mem
 ) {
 	assert(allocator);
-	assert(mem);
+
+	if ((const uint8_t *)mem < allocator->arena
+		|| allocator->arena + allocator->capacity <= (const uint8_t *)mem
+	) return IPJ_INVALID_OFFSET;
 
 	return (const uint8_t *)mem - allocator->arena;
 }
 
 void *ipj_offset_resolve(ipj_allocator_t *allocator, ptrdiff_t offset) {
 	assert(allocator);
-	return allocator->arena + offset;
+
+	uint8_t *const ptr = allocator->arena + offset;
+	return ptr < allocator->arena + allocator->capacity ? ptr : NULL;
 }
 
 const void *ipj_offset_resolve_const(
@@ -62,5 +67,7 @@ const void *ipj_offset_resolve_const(
 	ptrdiff_t offset
 ) {
 	assert(allocator);
-	return allocator->arena + offset;
+
+	const uint8_t *const ptr = allocator->arena + offset;
+	return ptr < allocator->arena + allocator->capacity ? ptr : NULL;
 }
