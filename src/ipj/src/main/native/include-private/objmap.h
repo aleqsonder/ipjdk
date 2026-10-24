@@ -17,12 +17,12 @@ struct ipj_objmap_state *ipj_objmap_state_markup(
 
 // returns NULL if the object with required id does not exist
 // and no memory available to create it
-struct ipj_obj *ipj_objmap_provide(
+void *ipj_objmap_provide(
 	ipj_objmap_t *,
 	const char *id,
 	size_t payload_size);
 
-struct ipj_obj *ipj_obj_map_search(
+void *ipj_obj_map_search(
 	const ipj_objmap_t *,
 	const char *id);
 

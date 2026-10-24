@@ -3,59 +3,41 @@
 
 #include "obj.h"
 
-struct ipj_obj {
+struct ipj_obj_head {
 	uint32_t payload_size;
 	uint8_t payload_and_id[];
 };
 
-const size_t IPJ_OBJ_HEAD_SIZE = sizeof(struct ipj_obj);
+const size_t IPJ_OBJ_MIN_SIZE = sizeof(struct ipj_obj_head);
 
-ipj_obj_t *ipj_obj_markup(
+#define OBJ_HEAD_GET(OBJ_PAYLOAD) \
+	((struct ipj_obj_head *)((uint8_t *)OBJ_PAYLOAD \
+		- offsetof(struct ipj_obj_head, payload_and_id)))
+
+#define OBJ_ID_GET(OBJ_HEAD) \
+	((OBJ_HEAD)->payload_and_id + (OBJ_HEAD)->payload_size)
+
+void *ipj_obj_markup(
 	void *buf,
-	size_t payload_size,
-	const void *payload,
-	const char *id
+	const char *id,
+	size_t payload_size
 ) {
 	assert(buf);
 	assert(id);
 
-	ipj_obj_t *const obj = buf;
-	*obj = (ipj_obj_t) { .payload_size = payload_size };
+	struct ipj_obj_head *const obj_head = buf;
+	*obj_head = (struct ipj_obj_head) { .payload_size = payload_size };
 
-	if (payload)
-		memcpy(obj->payload_and_id, payload, payload_size);
-
-	char *const stored_id = ipj_obj_id(obj);
-	strcpy(stored_id, id);
-
-	return obj;
+	strcpy((char *)OBJ_ID_GET(obj_head), id);
+	return obj_head->payload_and_id;
 }
 
-char *ipj_obj_id(ipj_obj_t *obj) {
+char *ipj_obj_id(void *obj) {
 	assert(obj);
-	return (char *)obj->payload_and_id + obj->payload_size;
+	return (char *)OBJ_ID_GET(OBJ_HEAD_GET(obj));
 }
 
-const char *ipj_obj_id_const(const ipj_obj_t *obj) {
+const char *ipj_obj_id_const(const void *obj) {
 	assert(obj);
-	return (char *)obj->payload_and_id + obj->payload_size;
-}
-
-size_t ipj_obj_payload(ipj_obj_t *obj, void **payload) {
-	assert(obj);
-
-	if (payload)
-		*payload = obj->payload_and_id;
-	return obj->payload_size;
-}
-
-size_t ipj_obj_payload_const(
-	const ipj_obj_t *obj,
-	const void **payload
-) {
-	assert(obj);
-
-	if (payload)
-		*payload = obj->payload_and_id;
-	return obj->payload_size;
+	return (const char *)OBJ_ID_GET(OBJ_HEAD_GET(obj));
 }

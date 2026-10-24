@@ -72,7 +72,7 @@ struct ipj_objmap_state *ipj_obj_map_state_markup(
 	return state;
 }
 
-struct ipj_obj *ipj_objmap_provide(
+void *ipj_objmap_provide(
 	ipj_objmap_t *map,
 	const char *id,
 	size_t payload_size
@@ -102,15 +102,15 @@ struct ipj_obj *ipj_objmap_provide(
 	if (found == cell_count)
 		return NULL;
 
-	const size_t obj_full_size = ipj_obj_size(payload_size, id);
-	struct ipj_obj *const new_obj = ipj_alloc(map->allocator, obj_full_size);
-	if (!new_obj)
+	const size_t obj_size = ipj_obj_size(id, payload_size);
+	void *const objbuf = ipj_alloc(map->allocator, obj_size);
+	if (!objbuf)
 		return NULL;
 
-	ipj_obj_markup(new_obj, payload_size, NULL, id);
+	void *const new_obj = ipj_obj_markup(objbuf, id, payload_size);
 	cells[found] = ipj_mem_offset(map->allocator, new_obj);
 
-	return new_obj;
+	return objbuf;
 }
 
 struct ipj_obj *ipj_objmap_search(
