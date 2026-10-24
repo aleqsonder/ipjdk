@@ -5,14 +5,6 @@ demo/subst: $(patsubst %.c,%.o,$(wildcard src/share/*.c))
 
 test/%: CFLAGS+=-g $(shell pkg-config --cflags check)
 test/%: LDLIBS+=$(shell pkg-config --libs check)
-
-ifeq ($(TEST_RUN),yes)
-TESTS:=$(basename $(filter %.c,$(wildcard test/*)))
-.PHONY: $(TESTS)
-$(TESTS):
-	$@
-endif
-
 test/allocator: src/share/allocator.o
 test/obj: src/share/obj.o
 

@@ -1,0 +1,6 @@
+# executables
+allocator
+obj
+
+# cache
+*.dSYM
