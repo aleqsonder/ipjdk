@@ -2,169 +2,174 @@
 #include <stdint.h>
 #include <stdbool.h>
 #include <assert.h>
-#include <math.h>
 
 #include "shmem.h"
-
+#include "objmap.h"
 
 // <settings>
 
-#ifndef IPJ_SHMEM_SIZE
-	// 4MB by default
-	#define IPJ_SHMEM_SIZE 4<<20
+#ifndef IPJ_OBJMAP_SIZE
+	// 1MB
+	#define IPJ_OBJMAP_SIZE 1<<20
 #endif
 
-#ifndef IPJ_FILE_MAPPING_NAME
-	#define IPJ_FILE_MAPPING_NAME TEXT("ipj")
+#ifndef IPJ_OBJMAP_FNAME
+	#define IPJ_OBJMAP_FNAME TEXT("ipj-objmap")
+#endif
+
+#ifndef IPJ_SHBUF_SIZE
+	// 4MB
+	#define IPJ_SHBUF_SIZE 4<<20
+#endif
+
+#ifndef IPJ_SHBUF_FNAME
+	#define IPJ_SHBUF_FNAME TEXT("ipj-shbuf")
 #endif
 
 // </settings>
 
 
-// <aux>
-
-struct dict_item { uint32_t key_offset, obj_offset; };
-struct shmem_obj { uint32_t size; unsigned char data[]; };
-
-struct shmem {
-	uint32_t top, item_count;
-	struct dict_item dict_items[];
-};
-
-static size_t dict_capacity_get(void);
-
-static ssize_t avl_search(
-	size_t count,
-	const struct dict_item *items,
-	const char *name,
-	uint32_t *path // nullable
-);
-
-static uint32_t avl_put(struct dict_item *items, const uint32_t *path);
-
-// </aux>
-
-
 // <globals>
 
-static struct shmem *shmem = NULL;
-#define SHMBUF ((unsigned char *)shmem->dict_items)
+static ipj_allocator_t *allocator = NULL;
+static struct ipj_objmap objmap;
 
 // </globals>
 
 
-enum ipj_shmerror ipj_shm_init(void) {
-	enum ipj_shmerror status = IPJ_SHM_SUCCESS;
+// <aux>
 
-	const HANDLE fmap = CreateFileMapping(
-		INVALID_HANDLE_VALUE,
-		NULL,
-		PAGE_READWRITE,
-		0,
-		IPJ_SHMEM_SIZE,
-		IPJ_FILE_MAPPING_NAME);
-	if (fmap == NULL) {
-		status = IPJ_SHM_UNKNOWN;
-		goto final;
-	}
+static int allocator_init(void);
+static void allocator_destroy(void);
 
-	const LPVOID buf = MapViewOfFile(fmap, FILE_MAP_WRITE, 0, 0, 0);
-	if (buf == NULL) {
-		status = IPJ_SHM_UNKNOWN;
-		goto fmap_cleanup;
-	}
+static int objmap_init(void);
+static void objmap_destroy(void);
 
-	shmem = buf;
-	*shmem = (struct shmem) { .top = IPJ_SHMEM_SIZE, .item_count = 0 };
+static LPVOID shmopen(LPCSTR name, SIZE_T size);
+static void shmclose(LPVOID shm);
 
-	// no goto final
-
-// cleanup anyway
-fmap_cleanup:
-	CloseHandle(fmap);
-
-final:
-	return status;
-}
+// </aux>
 
 
-void ipj_shm_destroy(void) {
-	UnmapViewOfFile(shmem);
-}
+int ipj_shm_init(void) { return objmap_init(); }
+void ipj_shm_cleanup(void) { objmap_destroy(); }
 
-
-enum ipj_shmerror ipj_shalloc(
-	const char *name,
-	size_t min_size,
-	void **mem
-) {
-	assert(shmem != NULL);
+void *ipj_shalloc(const char *name, size_t *size, bool *is_new) {
 	assert(name);
 
-	const size_t dict_capacity = dict_capacity_get();
-	const size_t avl_max_depth = log2(dict_capacity);
-	uint32_t path[avl_max_depth];
+	const size_t size_local = size ? *size : 0;
 
-	const ssize_t found = avl_search(
-		shmem->item_count, shmem->dict_items, name, path);
+	ipj_obj_t *const
+	obj = ipj_objmap_provide(&objmap, name, size_local, is_new);
 
-	if (found != -1) {
-		const struct dict_item item = shmem->dict_items[found];
+	if (obj && size)
+		*size = ipj_obj_payload_size(obj);
 
-		struct shmem_obj *const
-		obj = (struct shmem_obj *)(SHMBUF + item.obj_offset);
+	return obj;
+}
 
-		if (mem)
-			*mem = obj->data;
-
-		if (obj->size < min_size)
-			return IPJ_SHM_EXIST_LESS;
-	} else {
-		const size_t name_len = strlen(name);
-
-		const uint32_t new_top
-			= shmem->top
-			- min_size
-			- sizeof(struct shmem_obj)
-			- (name_len+1);
-
-		const size_t extended_avl_size
-			= (shmem->item_count + 1)
-			* sizeof(*shmem->dict_items);
-
-		if (new_top < extended_avl_size) 
-			return IPJ_SHM_NOMEM;
-
-		shmem->item_count++;
-		shmem->top = new_top;
-
-		const struct dict_item item = {
-			.key_offset = new_top,
-			.obj_offset = new_top + name_len+1 };
-
-		const uint32_t new_dict_item_idx = avl_put(shmem->dict_items, path);
-		shmem->dict_items[new_dict_item_idx] = item;
-
-		memcpy((unsigned char *)shmem->dict_items + item.key_offset,
-			name, name_len+1);
-
-		struct shmem_obj *const
-		obj = (struct shmem_obj *)(SHMBUF + item.obj_offset);
-
-		obj->size = min_size;
-
-		if (mem)
-			*mem = obj->data;
+void ipj_shfree(void *shm) {
+	if (shm != NULL) {
+		ipj_obj_t *const obj = shm;
+		const char *const id = ipj_obj_id_const(obj);
+		ipj_objmap_erase(&objmap, id);
 	}
-
-	return IPJ_SHM_SUCCESS;
 }
 
 
 // <aux-impl>
 
-size_t dict_capacity_get(void) {
-	return (shmem->top - sizeof(*shmem)) / sizeof(*shmem->dict_items);
+int objmap_init(void) {
+	int status = allocator_init();
+	if (status)
+		return status;
+
+	const LPVOID shm = shmopen(IPJ_OBJMAP_FNAME, IPJ_OBJMAP_SIZE);
+	if (shm == NULL) {
+		status = 1;
+		goto final;
+	}
+
+	struct ipj_objmap_state *const
+	state = ipj_objmap_state_markup(IPJ_OBJMAP_SIZE, shm);
+	if (state == NULL) {
+		status = 1;
+		goto shm_cleanup;
+	}
+
+	objmap = (struct ipj_objmap) {
+		.allocator = allocator,
+		.state = state };
+
+	goto final;
+
+shm_cleanup:
+	shmclose(shm);
+
+final:
+	return status;
+}
+
+int allocator_init(void) {
+	int status = 0;
+
+	const LPVOID shm = shmopen(IPJ_SHBUF_FNAME, IPJ_SHBUF_SIZE);
+	if (shm == NULL) {
+		status = 1;
+		goto final;
+	}
+
+	allocator = ipj_allocator_markup(IPJ_SHBUF_SIZE, shm);
+	if (allocator == NULL) {
+		status = 1;
+		goto shm_cleanup;
+	}
+
+	goto final;
+
+shm_cleanup:
+	shmclose(shm);
+
+final:
+	return status;
+}
+
+LPVOID shmopen(LPCSTR name, SIZE_T size) {
+	const DWORD
+		size_hi = size >> (8 * sizeof(DWORD)),
+		size_lo = size & 0xffffffff;
+
+	const HANDLE fmap = CreateFileMapping(
+		INVALID_HANDLE_VALUE,
+		NULL,
+		PAGE_READWRITE,
+		size_hi,
+		size_lo,
+		name);
+	if (fmap == NULL)
+		return NULL;
+
+	const LPVOID mem = MapViewOfFile(fmap, FILE_MAP_WRITE, 0, 0, 0);
+
+	CloseHandle(fmap);
+	return mem;
+}
+
+void shmclose(LPVOID shm) {
+	if (shm)
+		UnmapViewOfFile(shm);
+}
+
+void objmap_destroy(void) {
+	void *const shm = ipj_objmap_state_unmarkup(objmap.state);
+	shmclose(shm);
+
+	allocator_destroy();
+}
+
+void allocator_destroy(void) {
+	void *const shm = ipj_allocator_unmarkup(allocator);
+	shmclose(shm);
 }
 
 // </aux-impl>

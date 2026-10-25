@@ -16,6 +16,9 @@ struct ipj_objmap_state *ipj_objmap_state_markup(
 	size_t bufsize,
 	void *buf);
 
+// returns the buf address given to the ipj_objmap_state_markup()
+void *ipj_objmap_state_unmarkup(struct ipj_objmap_state *);
+
 // returns NULL if the object with required id does not exist
 // and no memory available to create it
 ipj_obj_t *ipj_objmap_provide(

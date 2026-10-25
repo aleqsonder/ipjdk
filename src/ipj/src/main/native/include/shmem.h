@@ -2,30 +2,22 @@
 #define IPJ_SHMEM_H
 
 #include <stddef.h>
+#include <stdbool.h>
 
-enum ipj_shmerror {
-	IPJ_SHM_SUCCESS = 0,
-	
-	// unknown error
-	// (probably check for errno on POSIX or GetLastError on Windows)
-	IPJ_SHM_UNKNOWN = 1,
+int ipj_shm_init(void);
+void ipj_shm_cleanup(void);
 
-	// no memory available
-	IPJ_SHM_NOMEM,
-
-	// memory object with that name does exist
-	// but it has less space than required
-	IPJ_SHM_EXIST_LESS
-};
-
-enum ipj_shmerror ipj_shm_init(void);
-void ipj_shm_destroy(void);
-
-enum ipj_shmerror ipj_shalloc(
+// TODO: Support anonymous objects
+void *ipj_shalloc(
+	// [in]
 	const char *name,
-	size_t min_size,
-	void **mem);
 
-void ipj_shfree(void *mem);
+	// [inout, nullable]
+	size_t *size,
+
+	// [out, nullable]
+	bool *is_new);
+
+void ipj_shfree(void *shm);
 
 #endif

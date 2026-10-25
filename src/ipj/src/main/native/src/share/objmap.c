@@ -75,6 +75,10 @@ struct ipj_objmap_state *ipj_objmap_state_markup(
 	return state;
 }
 
+void *ipj_objmap_state_unmarkup(struct ipj_objmap_state *state) {
+	return state;
+}
+
 ipj_obj_t *ipj_objmap_provide(
 	struct ipj_objmap *map,
 	const char *id,
