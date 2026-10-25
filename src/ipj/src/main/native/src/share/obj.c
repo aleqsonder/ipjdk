@@ -7,7 +7,6 @@ struct ipj_obj_head {
 	uint32_t payload_size;
 	uint8_t payload_and_id[];
 };
-
 const size_t IPJ_OBJ_MIN_SIZE = sizeof(struct ipj_obj_head);
 
 #define OBJ_HEAD_GET(OBJ_PAYLOAD) \
@@ -32,12 +31,24 @@ void *ipj_obj_markup(
 	return obj_head->payload_and_id;
 }
 
+void *ipj_obj_unmarkup(void *obj) {
+	assert(obj);
+	return OBJ_HEAD_GET(obj);
+}
+
+size_t ipj_obj_payload_size(const void *obj) {
+	assert(obj);
+	return OBJ_HEAD_GET(obj)->payload_size;
+}
+
 char *ipj_obj_id(void *obj) {
 	assert(obj);
-	return (char *)OBJ_ID_GET(OBJ_HEAD_GET(obj));
+	struct ipj_obj_head *const head = OBJ_HEAD_GET(obj);
+	return (char *)OBJ_ID_GET(head);
 }
 
 const char *ipj_obj_id_const(const void *obj) {
 	assert(obj);
-	return (const char *)OBJ_ID_GET(OBJ_HEAD_GET(obj));
+	const struct ipj_obj_head *const head = OBJ_HEAD_GET(obj);
+	return (const char *)OBJ_ID_GET(head);
 }

@@ -63,19 +63,23 @@ struct ipj_objmap_state *ipj_objmap_state_markup(
 
 	struct ipj_objmap_state *const state = buf;
 	*state = (struct ipj_objmap_state) {
-		.cell_count = 0,
+		.cell_count = HMAP_MIN_CELL_COUNT,
 		.cell_count_limit
 			= (bufsize - IPJ_OBJMAP_STATE_MIN_SIZE)
 			/ sizeof(hmap_cell_t)
 	};
 
+	for (size_t i = 0; i < HMAP_MIN_CELL_COUNT; ++i)
+		state->cells[i] = HMAP_EMPTY_CELL;
+
 	return state;
 }
 
-void *ipj_objmap_provide(
+ipj_obj_t *ipj_objmap_provide(
 	struct ipj_objmap *map,
 	const char *id,
-	size_t payload_size
+	size_t payload_size,
+	bool *is_new
 ) {
 	assert(map);
 	assert(id);
@@ -99,18 +103,24 @@ void *ipj_objmap_provide(
 	if (found == cell_count)
 		return NULL;
 
+	if (is_new)
+		*is_new = cells[found] == HMAP_EMPTY_CELL;
+
+	if (cells[found] != HMAP_EMPTY_CELL)
+		return ipj_offset_resolve(map->allocator, cells[found]);
+
 	const size_t obj_size = ipj_obj_size(id, payload_size);
 	void *const objbuf = ipj_alloc(map->allocator, obj_size);
 	if (!objbuf)
 		return NULL;
 
-	void *const new_obj = ipj_obj_markup(objbuf, id, payload_size);
+	ipj_obj_t *const new_obj = ipj_obj_markup(objbuf, id, payload_size);
 	cells[found] = ipj_mem_offset(map->allocator, new_obj);
 
-	return objbuf;
+	return new_obj;
 }
 
-struct ipj_obj *ipj_objmap_search(
+ipj_obj_t *ipj_objmap_search(
 	const struct ipj_objmap *map,
 	const char *id
 ) {
@@ -140,7 +150,7 @@ void ipj_objmap_erase(struct ipj_objmap *map, const char *id) {
 		obj = ipj_offset_resolve(map->allocator, cells[found]);
 
 		cells[found] = HMAP_EMPTY_CELL;
-		ipj_free(map->allocator, obj);
+		ipj_free(map->allocator, ipj_obj_unmarkup(obj));
 	}
 }
 
