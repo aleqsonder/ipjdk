@@ -4,6 +4,7 @@
 #include <assert.h>
 
 #include "shmem.h"
+#include "shmmap.h"
 #include "objmap.h"
 
 // <settings>
@@ -44,9 +45,6 @@ static void allocator_destroy(void);
 
 static int objmap_init(void);
 static void objmap_destroy(void);
-
-static LPVOID shmopen(LPCSTR name, SIZE_T size);
-static void shmclose(LPVOID shm);
 
 // </aux>
 
@@ -132,32 +130,6 @@ shm_cleanup:
 
 final:
 	return status;
-}
-
-LPVOID shmopen(LPCSTR name, SIZE_T size) {
-	const DWORD
-		size_hi = size >> (8 * sizeof(DWORD)),
-		size_lo = size & 0xffffffff;
-
-	const HANDLE fmap = CreateFileMapping(
-		INVALID_HANDLE_VALUE,
-		NULL,
-		PAGE_READWRITE,
-		size_hi,
-		size_lo,
-		name);
-	if (fmap == NULL)
-		return NULL;
-
-	const LPVOID mem = MapViewOfFile(fmap, FILE_MAP_WRITE, 0, 0, 0);
-
-	CloseHandle(fmap);
-	return mem;
-}
-
-void shmclose(LPVOID shm) {
-	if (shm)
-		UnmapViewOfFile(shm);
 }
 
 void objmap_destroy(void) {
