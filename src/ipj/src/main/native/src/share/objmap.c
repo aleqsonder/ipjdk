@@ -18,7 +18,7 @@ static size_t djb2(const char *s);
 // <hmap>
 
 typedef uint32_t hmap_cell_t;
-#define EMPTY_HMAP_CELL UINT32_MAX
+#define HMAP_EMPTY_CELL UINT32_MAX
 
 #define HMAP_NEW_CELL_COUNT_RATIO 2
 #define HMAP_MIN_CELL_COUNT 16
@@ -50,22 +50,22 @@ struct ipj_objmap_state {
 	uint32_t cell_count, cell_count_limit;
 	hmap_cell_t cells[];
 };
-const size_t IPJ_OBJMAP_STATE_HEAD_SIZE = sizeof(struct ipj_objmap_state);
+const size_t IPJ_OBJMAP_STATE_MIN_SIZE = sizeof(struct ipj_objmap_state);
 
-struct ipj_objmap_state *ipj_obj_map_state_markup(
+struct ipj_objmap_state *ipj_objmap_state_markup(
 	size_t bufsize,
 	void *buf
 ) {
 	assert(bufsize == 0 || buf);
 
-	if (bufsize < IPJ_OBJMAP_STATE_HEAD_SIZE)
+	if (bufsize < IPJ_OBJMAP_STATE_MIN_SIZE)
 		return NULL;
 
 	struct ipj_objmap_state *const state = buf;
 	*state = (struct ipj_objmap_state) {
 		.cell_count = 0,
 		.cell_count_limit
-			= (bufsize - IPJ_OBJMAP_STATE_HEAD_SIZE)
+			= (bufsize - IPJ_OBJMAP_STATE_MIN_SIZE)
 			/ sizeof(hmap_cell_t)
 	};
 
@@ -73,15 +73,12 @@ struct ipj_objmap_state *ipj_obj_map_state_markup(
 }
 
 void *ipj_objmap_provide(
-	ipj_objmap_t *map,
+	struct ipj_objmap *map,
 	const char *id,
 	size_t payload_size
 ) {
 	assert(map);
 	assert(id);
-
-	if (payload_size == 0)
-		return NULL;
 
 	size_t cell_count = map->state->cell_count;
 	hmap_cell_t *const cells = map->state->cells;
@@ -114,7 +111,7 @@ void *ipj_objmap_provide(
 }
 
 struct ipj_obj *ipj_objmap_search(
-	const ipj_objmap_t *map,
+	const struct ipj_objmap *map,
 	const char *id
 ) {
 	assert(map);
@@ -125,12 +122,12 @@ struct ipj_obj *ipj_objmap_search(
 
 	const size_t found = hmap_probe(cell_count, cells, id, map->allocator);
 
-	return found == cell_count || cells[found] == EMPTY_HMAP_CELL
+	return found == cell_count || cells[found] == HMAP_EMPTY_CELL
 		? NULL
 		: ipj_offset_resolve(map->allocator, cells[found]);
 }
 
-void ipj_objmap_erase(ipj_objmap_t *map, const char *id) {
+void ipj_objmap_erase(struct ipj_objmap *map, const char *id) {
 	assert(map);
 	assert(id);
 
@@ -138,11 +135,11 @@ void ipj_objmap_erase(ipj_objmap_t *map, const char *id) {
 	hmap_cell_t *const cells = map->state->cells;
 
 	const size_t found = hmap_probe(cell_count, cells, id, map->allocator);
-	if (found != cell_count && cells[found] != EMPTY_HMAP_CELL) {
+	if (found != cell_count && cells[found] != HMAP_EMPTY_CELL) {
 		struct ipj_obj *const
 		obj = ipj_offset_resolve(map->allocator, cells[found]);
 
-		cells[found] = EMPTY_HMAP_CELL;
+		cells[found] = HMAP_EMPTY_CELL;
 		ipj_free(map->allocator, obj);
 	}
 }
@@ -169,11 +166,12 @@ size_t hmap_probe(
 		const size_t idx = (h + i) % cell_count;
 		const hmap_cell_t cell = cells[idx];
 
-		if (cell == EMPTY_HMAP_CELL)
+		if (cell == HMAP_EMPTY_CELL)
 			return idx;
 
 		const struct ipj_obj *const
 		obj = ipj_offset_resolve_const(allocator, cell);
+		assert(obj);
 
 		const char *const stored_id = ipj_obj_id_const(obj);
 		const int cmp = strcmp(id, stored_id);
@@ -187,7 +185,7 @@ size_t hmap_probe(
 
 size_t hmap_new_size(size_t curr_cell_count, size_t max_cell_count) {
 	return maxz(HMAP_MIN_CELL_COUNT, minz(max_cell_count,
-			curr_cell_count * HMAP_NEW_CELL_COUNT_RATIO));
+		curr_cell_count * HMAP_NEW_CELL_COUNT_RATIO));
 }
 
 void hmap_rehash(
@@ -206,7 +204,9 @@ void hmap_rehash(
 
 	hmap_cell_t old_cells[curr_cell_count];
 	memcpy(old_cells, cells, curr_cell_count * sizeof(*cells));
-	memset(cells, 0xff, new_cell_count * sizeof(*cells));
+	
+	for (size_t i = 0; i < new_cell_count; ++i)
+		cells[i] = HMAP_EMPTY_CELL;
 
 	for (size_t i = 0; i < curr_cell_count; ++i) {
 		const hmap_cell_t old_cell = old_cells[i];
