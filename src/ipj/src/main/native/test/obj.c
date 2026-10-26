@@ -17,7 +17,7 @@ START_TEST(size) {
 } END_TEST
 
 START_TEST(unmarkup) {
-	uint8_t *const buf_restored = ipj_obj_unmarkup(obj);
+	uint8_t *const buf_restored = ipj_obj_uncheckout(obj);
 	ck_assert_ptr_eq(buf_restored, buf);
 } END_TEST
 

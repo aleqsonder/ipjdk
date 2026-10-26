@@ -4,6 +4,9 @@ hello
 
 # binaries
 *.o
+*.dll
+*.so
+*.dylib
 
 # cache
 .cache

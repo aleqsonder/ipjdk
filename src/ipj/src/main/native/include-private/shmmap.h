@@ -2,8 +2,12 @@
 #define IPJ_SHMMAP_H
 
 #include <stddef.h>
+#include <stdbool.h>
 
-void *shmopen(const char *name, size_t size);
-void shmclose(void *shm);
+typedef struct ipj_shm ipj_shm_t;
+
+ipj_shm_t *ipj_shm_open(const char *name, size_t size, bool *is_new);
+void ipj_shm_close(ipj_shm_t *);
+void *ipj_shm_data(const ipj_shm_t *);
 
 #endif

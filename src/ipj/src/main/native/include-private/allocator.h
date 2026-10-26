@@ -6,7 +6,9 @@
 typedef struct ipj_allocator ipj_allocator_t;
 
 ipj_allocator_t *ipj_allocator_markup(size_t bufsize, void *buf);
-void *ipj_allocator_unmarkup(ipj_allocator_t *);
+
+ipj_allocator_t *ipj_allocator_checkout(void *);
+void *ipj_allocator_uncheckout(ipj_allocator_t *);
 
 void *ipj_alloc(ipj_allocator_t *, size_t size);
 void ipj_free(ipj_allocator_t *, void *mem);

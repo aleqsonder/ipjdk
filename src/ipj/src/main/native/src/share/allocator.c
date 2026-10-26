@@ -22,9 +22,10 @@ struct ipj_allocator *ipj_allocator_markup(size_t bufsize, void *buf) {
 	return allocator;
 }
 
-void *ipj_allocator_unmarkup(struct ipj_allocator *allocator) {
-	return allocator;
-}
+struct ipj_allocator *ipj_allocator_checkout(void *mem) {
+	return mem; }
+void *ipj_allocator_uncheckout(struct ipj_allocator *allocator) {
+	return allocator; }
 
 void *ipj_alloc(struct ipj_allocator *allocator, size_t size) {
 	assert(allocator);

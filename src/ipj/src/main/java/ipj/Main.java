@@ -17,11 +17,24 @@ class X extends Shared {
 
 public class Main {
     public static void main(String[] args) {
-        try (final var x = Shared.open(X.class, "hello", 1, 2, null, new int[3])) {
-            System.out.println(x.a);
-            System.out.println(x.b);
-            System.out.println(x.obj);
-            System.out.println(x.arr);
+        System.out.println("args.length=" + args.length);
+        for (var i = 0; i < args.length; ++i)
+            System.out.println("args[" + i + "]=" + args[i]);
+
+        try (
+            final var x1 = Shared.open(X.class, "hello", 1, 2, null, new int[3]);
+            final var x2 = Shared.open(X.class, "hello", 3, 4, null, new int[2])
+        ) {
+            System.out.println(x1.a);
+            System.out.println(x1.b);
+            System.out.println(x1.obj);
+            System.out.println(x1.arr);
+
+            if (args.length >= 2 && "set".startsWith(args[0])) {
+                x1.set(0, Integer.valueOf(args[1]));
+                System.in.read();
+            }
+            System.out.println(x2.getInt(0));
         } catch (Exception e) {
             e.printStackTrace();
         }

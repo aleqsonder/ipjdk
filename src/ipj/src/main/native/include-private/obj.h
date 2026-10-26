@@ -13,8 +13,8 @@ typedef void ipj_obj_t;
 // returns pointer to the actual payload
 ipj_obj_t *ipj_obj_markup(void *buffer, const char *id, size_t payload_size);
 
-// returns pointer to the buffer given to ipj_obj_markup
-void *ipj_obj_unmarkup(ipj_obj_t *);
+ipj_obj_t *ipj_obj_checkout(void *);
+void *ipj_obj_uncheckout(ipj_obj_t *);
 
 size_t ipj_obj_payload_size(const ipj_obj_t *);
 

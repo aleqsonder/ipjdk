@@ -8,7 +8,6 @@ import java.util.logging.Logger;
 
 public abstract class Shared implements AutoCloseable {
 	private long ptr = 0;
-	private String id = null;
 
 	private static final Logger
 	LOGGER = Logger.getLogger(Shared.class.getName());
@@ -18,23 +17,23 @@ public abstract class Shared implements AutoCloseable {
 		INT_SIZE = 4,
 		LONG_SIZE = 8;
 
+	static { System.loadLibrary("ipjshmem"); }
+
 	public static <T extends Shared> T
 	open(Class<T> cls, String id, Object... initArgs)
 	throws NoSuchMethodException, InstantiationException,
 	IllegalAccessException, IllegalArgumentException,
 	InvocationTargetException, InvalidClassException,
 	OutOfMemoryError {
-		final var size = sizeof(cls);
-
 		final var ctrParamTypes = Arrays.stream(initArgs)
 			.map((obj) -> obj == null ? Shared.class : obj.getClass())
 			.toArray(Class[]::new);
+
 		final var ctr = cls.getDeclaredConstructor(ctrParamTypes);
 		final var instance = ctr.newInstance(initArgs);
 
 		final Shared shared = instance;
-		shared.id = id;
-		shared.ptr = alloc(size);
+		shared.ptr = shalloc(id, sizeof(cls));
 
 		if (shared.ptr == 0)
 			throw new OutOfMemoryError();
@@ -43,12 +42,10 @@ public abstract class Shared implements AutoCloseable {
 	}
 
 	@Override
-	public void close() {}
+	public void close() { shfree(ptr); }
 
 	@Override
-	public String toString() {
-		return "Shared(ptr=" + ptr + ", id=\""+ id + "\")";
-	}
+	public String toString() { return "Shared(ptr=" + ptr + ")"; }
 
 	private static <T extends Shared> int sizeof(Class<T> cls)
 	throws InvalidClassException {
@@ -70,6 +67,14 @@ public abstract class Shared implements AutoCloseable {
 		throw new InvalidClassException(msg);
 	}
 
-	private static native long alloc(int size);
-	private static native void free(long ptr);
+	// TEST
+	public int getInt(int offset) { return getInt(ptr, offset); }
+	public static native int getInt(long ptr, int offset);
+	
+	// TEST
+	public void set(int offset, int value) { set(ptr, offset, value); }
+	public static native void set(long ptr, int offset, int value);
+
+	private static native long shalloc(String id, int size);
+	private static native void shfree(long ptr);
 }

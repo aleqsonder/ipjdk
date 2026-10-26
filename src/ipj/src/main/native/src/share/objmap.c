@@ -75,9 +75,10 @@ struct ipj_objmap_state *ipj_objmap_state_markup(
 	return state;
 }
 
-void *ipj_objmap_state_unmarkup(struct ipj_objmap_state *state) {
-	return state;
-}
+struct ipj_objmap_state *ipj_objmap_state_checkout(void *mem) {
+	return mem; }
+void *ipj_objmap_state_uncheckout(struct ipj_objmap_state *state) {
+	return state; }
 
 ipj_obj_t *ipj_objmap_provide(
 	struct ipj_objmap *map,
@@ -154,7 +155,7 @@ void ipj_objmap_erase(struct ipj_objmap *map, const char *id) {
 		obj = ipj_offset_resolve(map->allocator, cells[found]);
 
 		cells[found] = HMAP_EMPTY_CELL;
-		ipj_free(map->allocator, ipj_obj_unmarkup(obj));
+		ipj_free(map->allocator, ipj_obj_uncheckout(obj));
 	}
 }
 

@@ -1,4 +1,3 @@
-#include <windows.h>
 #include <stdint.h>
 #include <stdbool.h>
 #include <assert.h>
@@ -15,7 +14,7 @@
 #endif
 
 #ifndef IPJ_OBJMAP_FNAME
-	#define IPJ_OBJMAP_FNAME TEXT("ipj-objmap")
+	#define IPJ_OBJMAP_FNAME "ipj-objmap"
 #endif
 
 #ifndef IPJ_SHBUF_SIZE
@@ -24,7 +23,7 @@
 #endif
 
 #ifndef IPJ_SHBUF_FNAME
-	#define IPJ_SHBUF_FNAME TEXT("ipj-shbuf")
+	#define IPJ_SHBUF_FNAME "ipj-shbuf"
 #endif
 
 // </settings>
@@ -34,6 +33,8 @@
 
 static ipj_allocator_t *allocator = NULL;
 static struct ipj_objmap objmap;
+
+static ipj_shm_t *mapbuf = NULL, *arena = NULL;
 
 // </globals>
 
@@ -82,14 +83,17 @@ int objmap_init(void) {
 	if (status)
 		return status;
 
-	const LPVOID shm = shmopen(IPJ_OBJMAP_FNAME, IPJ_OBJMAP_SIZE);
-	if (shm == NULL) {
+	bool is_new = false;
+	mapbuf = ipj_shm_open(IPJ_OBJMAP_FNAME, IPJ_OBJMAP_SIZE, &is_new);
+	if (mapbuf == NULL) {
 		status = 1;
 		goto final;
 	}
 
-	struct ipj_objmap_state *const
-	state = ipj_objmap_state_markup(IPJ_OBJMAP_SIZE, shm);
+	void *const shm_data = ipj_shm_data(mapbuf);
+	struct ipj_objmap_state *const state = is_new
+		? ipj_objmap_state_markup(IPJ_OBJMAP_SIZE, shm_data)
+		: ipj_objmap_state_checkout(shm_data);
 	if (state == NULL) {
 		status = 1;
 		goto shm_cleanup;
@@ -102,7 +106,7 @@ int objmap_init(void) {
 	goto final;
 
 shm_cleanup:
-	shmclose(shm);
+	ipj_shm_close(mapbuf);
 
 final:
 	return status;
@@ -111,13 +115,17 @@ final:
 int allocator_init(void) {
 	int status = 0;
 
-	const LPVOID shm = shmopen(IPJ_SHBUF_FNAME, IPJ_SHBUF_SIZE);
-	if (shm == NULL) {
+	bool is_new = false;
+	arena = ipj_shm_open(IPJ_SHBUF_FNAME, IPJ_SHBUF_SIZE, &is_new);
+	if (arena == NULL) {
 		status = 1;
 		goto final;
 	}
 
-	allocator = ipj_allocator_markup(IPJ_SHBUF_SIZE, shm);
+	void *const shm_data = ipj_shm_data(arena);
+	allocator = is_new
+		? ipj_allocator_markup(IPJ_SHBUF_SIZE, shm_data)
+		: ipj_allocator_checkout(shm_data);
 	if (allocator == NULL) {
 		status = 1;
 		goto shm_cleanup;
@@ -126,22 +134,19 @@ int allocator_init(void) {
 	goto final;
 
 shm_cleanup:
-	shmclose(shm);
+	ipj_shm_close(arena);
 
 final:
 	return status;
 }
 
 void objmap_destroy(void) {
-	void *const shm = ipj_objmap_state_unmarkup(objmap.state);
-	shmclose(shm);
-
+	ipj_shm_close(mapbuf);
 	allocator_destroy();
 }
 
 void allocator_destroy(void) {
-	void *const shm = ipj_allocator_unmarkup(allocator);
-	shmclose(shm);
+	ipj_shm_close(arena);
 }
 
 // </aux-impl>
