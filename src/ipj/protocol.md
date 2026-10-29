@@ -102,6 +102,8 @@ class X extends Shared {
 	int b;
 	double c;
 	char[] d;
+	Shared e;
+	X[] f;
 }
 ```
 
@@ -114,7 +116,8 @@ class X extends Shared {
 | `b` | int     | 4             | 1             |
 | `c` | double  | 8             | 5             |
 | `d` | pointer | 8             | 13            |
-
+| `e` | pointer | 8             | 21            |
+| `f` | pointer | 8             | 29            |
 
 ### Дополнительная информация
 
@@ -139,3 +142,5 @@ class X extends Shared {
 | `b`         | int     | 4             | 9             |
 | `c`         | double  | 8             | 13            |
 | `d`         | pointer | 8             | 21            |
+| `e`         | pointer | 8             | 29            |
+| `f`         | pointer | 8             | 37            |
