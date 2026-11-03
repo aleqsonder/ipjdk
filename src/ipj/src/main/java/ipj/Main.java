@@ -1,7 +1,7 @@
 package ipj;
 
 class X extends Shared {
-    private static final long IPJ_VERSION = 34511L;
+    private static final long IPJ_CLSID = 34511L;
 
     public int a, b;
     public Shared obj;
