@@ -7,5 +7,5 @@ public class LayoutByteItem implements Layout.Item {
 	private LayoutByteItem() {}
 
 	@Override
-	public int getSize() { return MemoryBlock.BYTE_SIZE; }
+	public int getSize() { return 1; }
 }

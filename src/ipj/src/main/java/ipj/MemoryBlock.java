@@ -1,56 +1,25 @@
 package ipj;
 
-public class MemoryBlock {
-	public static int
-		BYTE_SIZE = 1,
-		SHORT_SIZE = 2,
-		INT_SIZE = 4,
-		LONG_SIZE = 8;
-
-	private long handle, offset;
-
-	public MemoryBlock(long handle) { this(handle, 0); }
-
-	public MemoryBlock(long handle, long offset) {
-		this.handle = handle;
-		this.offset = offset;
-	}
-
-	public long getHandle() { return handle; }
-
-	public MemoryBlock skip(long offsetDelta) {
-		return new MemoryBlock(handle, offset + offsetDelta);
-	}
+public interface MemoryBlock {
+	MemoryBlock skip(long offsetDelta);
 
 	// byte
-	public MemoryBlock put(byte value) {
-		set(value);
-		return skip(BYTE_SIZE);
-	}
-	public void set(byte value) { set(handle, offset, value); }
-	private static native void set(long handle, long offset, byte value);
+	default MemoryBlock put(byte value) { set(value); return skip(1); }
+	void set(byte value);
+	byte getByte();
 
 	// short
-	public MemoryBlock put(short value) {
-		set(value);
-		return skip(SHORT_SIZE);
-	}
-	public void set(short value) { set(handle, offset, value); }
-	private static native void set(long handle, long offset, short value);
+	MemoryBlock put(short value);
+	void set(short value);
+	short getShort();
 
 	// int
-	public MemoryBlock put(int value) {
-		set(value);
-		return skip(INT_SIZE);
-	}
-	public void set(int value) { set(handle, offset, value); }
-	private static native void set(long handle, long offset, int value);
+	MemoryBlock put(int value);
+	void set(int value);
+	int getInt();
 
 	// long
-	public MemoryBlock put(long value) {
-		set(value);
-		return skip(LONG_SIZE);
-	}
-	public void set(long value) { set(handle, offset, value); }
-	private static native void set(long handle, long offset, long value);
-};
+	MemoryBlock put(long value);
+	void set(long value);
+	long getLong();
+}

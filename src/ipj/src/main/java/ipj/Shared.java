@@ -3,6 +3,7 @@ package ipj;
 import java.io.InvalidClassException;
 import java.lang.reflect.Field;
 import java.lang.reflect.InvocationTargetException;
+import java.security.KeyException;
 import java.util.AbstractMap;
 import java.util.Arrays;
 import java.util.Collection;
@@ -24,14 +25,20 @@ public abstract class Shared implements AutoCloseable {
 	private static Map<Class<?>, Layout.Item>
 	SUPPORTED_PRIMITIVES = Map.of(
 		byte.class, LayoutByteItem.getInstance(),
-		short.class, LayoutShortItem.getInstance(),
-		int.class, LayoutIntItem.getInstance(),
-		long.class, LayoutLongItem.getInstance());
+		short.class, LayoutShortItemLP64.getInstance(),
+		int.class, LayoutIntItemLP64.getInstance(),
+		long.class, LayoutLongItemLP64.getInstance());
+
+	private static String
+		CLASS_REF_LABEL = "#clsref",
+		REF_COUNT_LABEL = "#refcnt",
+		CLASS_ID_LABEL = "#clsid",
+		FIELD_COUNT_LABEL = "#fldcnt";
 
 	static { System.loadLibrary("ipjshmem"); }
 
 	private Layout layout;
-	private MemoryBlock memory;
+	private MemoryBlockLP64 memory;
 
 	public static <T extends Shared> T
 	open(Class<T> cls, String id, Object... initArgs)
@@ -49,7 +56,7 @@ public abstract class Shared implements AutoCloseable {
 		if (handle == 0)
 			throw new OutOfMemoryError();
 
-		shared.memory = new MemoryBlock(handle);
+		shared.memory = new MemoryBlockLP64(handle);
 
 		if (isNewObject) {
 			final var classInfoLayout = makeClassInfoLayout(cls);
@@ -63,7 +70,7 @@ public abstract class Shared implements AutoCloseable {
 			}
 
 			if (isNewCls) {
-				final var clsInfoBlock = new MemoryBlock(clsInfoHandle);
+				final var clsInfoBlock = new MemoryBlockLP64(clsInfoHandle);
 				layout.markupClsInfo(clsInfoBlock);
 			}
 			layout.markupObj(shared.memory, clsInfoHandle, instance);
@@ -110,12 +117,13 @@ public abstract class Shared implements AutoCloseable {
 	private static Layout makeObjectLayout(Class<?> cls) {
 		try {
 			final var layout = new Layout(
-				makeLayoutItem("#clsref", LayoutLongItem.getInstance()),
-				makeLayoutItem("#refcount", LayoutIntItem.getInstance()));
+				// FIXME: Use pointer instead of ulong
+				makeLayoutLongEntry(CLASS_REF_LABEL),
+				makeLayoutIntEntry(REF_COUNT_LABEL));
 
 			final var fieldItems = Arrays
 				.stream(cls.getDeclaredFields())
-				.map(Shared::makeLayoutItem);
+				.map(Shared::makeLayoutEntry);
 			layout.append(fieldItems::iterator);
 
 			return layout;
@@ -126,27 +134,42 @@ public abstract class Shared implements AutoCloseable {
 	}
 
 	private static Map.Entry<String, Layout.Item>
-	makeLayoutItem(Field field) {
+	makeLayoutEntry(Field field) {
 		final var fieldType = field.getType();
 		final var layoutItem = SUPPORTED_PRIMITIVES.get(fieldType);
 		assert layoutItem != null : " unshareable field";
-		return makeLayoutItem(field.getName(), layoutItem);
+		return makeLayoutEntry(field.getName(), layoutItem);
 	}
 
 	private static Map.Entry<String, Layout.Item>
-	makeLayoutItem(String id, Layout.Item item) {
+	makeLayoutEntry(String id, Layout.Item item) {
 		return new AbstractMap.SimpleImmutableEntry<>(id, item);
+	}
+
+	private static Map.Entry<String, Layout.Item>
+	makeLayoutShortEntry(String id) {
+		return makeLayoutEntry(id, LayoutShortItemLP64.getInstance());
+	}
+
+	private static Map.Entry<String, Layout.Item>
+	makeLayoutIntEntry(String id) {
+		return makeLayoutEntry(id, LayoutIntItemLP64.getInstance());
+	}
+
+	private static Map.Entry<String, Layout.Item>
+	makeLayoutLongEntry(String id) {
+		return makeLayoutEntry(id, LayoutLongItemLP64.getInstance());
 	}
 
 	private static Layout makeClassInfoLayout(Class<?> cls) {
 		try {
 			final var layout = new Layout(
-				makeLayoutItem("#clsid", LayoutLongItem.getInstance()),
-				makeLayoutItem("#refcount", LayoutIntItem.getInstance()),
-				makeLayoutItem("#fieldCount", LayoutIntItem.getInstance()));
+				makeLayoutLongEntry(CLASS_ID_LABEL),
+				makeLayoutIntEntry(REF_COUNT_LABEL),
+				makeLayoutIntEntry(FIELD_COUNT_LABEL));
 			
 			for (final var field : cls.getDeclaredFields())
-				layout.append(field.getName(), LayoutShortItem.getInstance());
+				layout.append(field.getName(), LayoutShortItemLP64.getInstance());
 
 			return layout;
 		} catch (Layout.IdDuplicationException e) {
@@ -156,7 +179,42 @@ public abstract class Shared implements AutoCloseable {
 	}
 
 	@Override
-	public void close() {}
+	public void close() {
+		try {
+			final var refCountBlock = memory.skip(layout.getOffset(REF_COUNT_LABEL));
+			final var nextRefcount = refCountBlock.getInt() - 1;
+			refCountBlock.set(nextRefcount);
+
+			if (nextRefcount == 0) {
+				final var classRefBlock = layout.skip(memory, CLASS_REF_LABEL);
+				// final var classInfoBlock = classRefBlock.get
+			}
+		} catch (KeyException e) {
+			throw new RuntimeException(e);
+		}
+	}
+
+	private void addRef() {
+		final var refCountBlock = getRefCountBlock();
+		refCountBlock.set(refCountBlock.getInt() + 1);
+	}
+
+	private void release() {
+		final var refCountBlock = getRefCountBlock();
+		final var nextRefCount = refCountBlock.getInt() - 1;
+		refCountBlock.set(nextRefCount);
+
+		if (nextRefCount == 0)
+			// TODO ?
+	}
+
+	private MemoryBlockLP64 getRefCountBlock() {
+		try {
+			return memory.skip(layout.getOffset(REF_COUNT_LABEL));
+		} catch (KeyException e) {
+			throw new RuntimeException(e);
+		}
+	}
 
 	private static native long provide(String id, int size, Boolean isNew);
 	private static native long alloc(int size);

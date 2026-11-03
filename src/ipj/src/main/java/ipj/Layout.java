@@ -57,12 +57,6 @@ public class Layout {
 		return entries.isEmpty() ? 0 : entries.getLast().getNextOffset();
 	};
 
-	public final MemoryBlock skip(MemoryBlock block, String id)
-	throws KeyException {
-		final var offset = getOffset(id);
-		return block.skip(offset);
-	}
-
 	public final int getOffset(String id) throws KeyException {
 		final var index = itemIndices.get(id);
 		if (index == null)
