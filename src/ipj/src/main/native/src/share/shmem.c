@@ -36,47 +36,130 @@ static struct ipj_objmap objmap;
 
 static ipj_shm_t *mapbuf = NULL, *arena = NULL;
 
-// </globals>
-
-
-// <aux>
-
 static int allocator_init(void);
 static void allocator_destroy(void);
 
 static int objmap_init(void);
 static void objmap_destroy(void);
 
-// </aux>
+static ipj_shm_handle_t get_handle(void *mem);
+static void *resolve_handle(ipj_shm_handle_t handle);
+
+// </globals>
+
+
+// <utils>
+
+static size_t minz(size_t l, size_t r) { return l < r ? l : r; }
+
+static size_t get_io_byte_count(
+	const ipj_obj_t *obj,
+	size_t offset,
+	size_t requested_size);
+
+// </utils>
 
 
 int ipj_shm_init(void) { return objmap_init(); }
 void ipj_shm_cleanup(void) { objmap_destroy(); }
 
-void *ipj_shalloc(const char *name, size_t *size, bool *is_new) {
-	assert(name);
+ipj_shm_handle_t ipj_shm_alloc(size_t size) {
+	const size_t total_size = IPJ_OBJ_MIN_SIZE + size;
 
-	const size_t size_local = size ? *size : 0;
+	void *const objbuf = ipj_alloc(allocator, total_size);
+	if (!objbuf)
+		return IPJ_SHM_INVALID_HANDLE;
 
-	ipj_obj_t *const
-	obj = ipj_objmap_provide(&objmap, name, size_local, is_new);
+	ipj_obj_t *const obj = ipj_obj_markup(objbuf, NULL, size);
+	if (!obj)
+		return IPJ_SHM_INVALID_HANDLE;
 
-	if (obj && size)
-		*size = ipj_obj_payload_size(obj);
-
-	return obj;
+	ipj_obj_addref(obj);
+	return get_handle(obj);
 }
 
-void ipj_shfree(void *shm) {
-	if (shm != NULL) {
-		ipj_obj_t *const obj = shm;
-		const char *const id = ipj_obj_id_const(obj);
-		ipj_objmap_erase(&objmap, id);
+ipj_shm_handle_t ipj_shm_provide(
+	const char *name,
+	size_t *size,
+	bool *is_new
+) {
+	assert(name);
+
+	const size_t total_size = size ? *size : 0;
+
+	bool is_new_local = false;
+	ipj_obj_t *const obj = ipj_objmap_provide(
+		&objmap, name, total_size, &is_new_local);
+
+	if (!obj)
+		return IPJ_SHM_INVALID_HANDLE;
+
+	if (size)
+		*size = ipj_obj_payload_size(obj);
+
+	if (is_new)
+		*is_new = is_new_local;
+
+	ipj_obj_addref(obj);
+	return get_handle(obj);
+}
+
+void ipj_shm_release(ipj_shm_handle_t handle) {
+	if (handle != IPJ_SHM_INVALID_HANDLE) {
+		ipj_obj_t *const obj = ipj_offset_resolve(allocator, handle);
+		if (ipj_obj_release(obj)) {
+			if (ipj_obj_has_name(obj)) {
+				const char *const id = ipj_obj_id_const(obj);
+				ipj_objmap_erase(&objmap, id);
+			} else {
+				ipj_free(allocator, ipj_obj_uncheckout(obj));
+			}
+		}
 	}
 }
 
+ssize_t ipj_shm_read(
+	ipj_shm_handle_t handle,
+	size_t offset,
+	void *dest,
+	size_t size
+) {
+	assert(size == 0 || dest);
 
-// <aux-impl>
+	if (handle == IPJ_SHM_INVALID_HANDLE)
+		return -1;
+
+	ipj_obj_t *const obj = resolve_handle(handle);
+	const size_t count = get_io_byte_count(obj, offset, size);
+
+	if (count > 0)
+		memcpy(dest, (uint8_t *)obj + offset, count);
+
+	return size - count;
+}
+
+ssize_t ipj_shm_write(
+	ipj_shm_handle_t handle,
+	size_t offset,
+	const void *src,
+	size_t size
+) {
+	assert(size == 0 || src);
+
+	if (handle == IPJ_SHM_INVALID_HANDLE)
+		return -1;
+
+	ipj_obj_t *const obj = resolve_handle(handle);
+	const size_t write_count = get_io_byte_count(obj, offset, size);
+
+	if (write_count > 0)
+		memcpy((uint8_t *)obj + offset, src, write_count);
+
+	return size - write_count;
+}
+
+
+// <globals-impl>
 
 int objmap_init(void) {
 	int status = allocator_init();
@@ -149,4 +232,33 @@ void allocator_destroy(void) {
 	ipj_shm_close(arena);
 }
 
-// </aux-impl>
+ipj_shm_handle_t get_handle(void *mem) {
+	if (!mem)
+		return IPJ_SHM_INVALID_HANDLE;
+	return ipj_mem_offset(allocator, mem);
+}
+
+void *resolve_handle(ipj_shm_handle_t handle) {
+	if (handle == IPJ_SHM_INVALID_HANDLE)
+		return NULL;
+	return ipj_offset_resolve(allocator, handle);
+}
+
+// </globals-impl>
+
+
+// <utils-impl>
+
+size_t get_io_byte_count(
+	const ipj_obj_t *obj,
+	size_t offset,
+	size_t requested_size
+) {
+	const size_t
+		obj_payload_size = ipj_obj_payload_size(obj),
+		limit = minz(obj_payload_size, offset + requested_size);
+
+	return limit > offset ? limit - offset : 0;
+}
+
+// </utils-impl>
