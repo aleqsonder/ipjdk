@@ -11,17 +11,8 @@ public class Layout {
 		public IdDuplicationException(String id) { super(id); }
 	}
 
-	public static interface Item { int getSize(); }
-
-	private static record Entry(int offset, Item item) {
-		public Entry(int offset, Item item) {
-			this.offset = offset;
-			this.item = item;
-		}
-
-		public final int getNextOffset() {
-			return offset + item.getSize();
-		}
+	private static record Entry(int offset, int size) {
+		public final int getNextOffset() { return offset + size; }
 	};
 
 	private List<Entry> entries = new ArrayList<>();
@@ -30,20 +21,20 @@ public class Layout {
 	public Layout() {}
 
 	@SafeVarargs
-	public Layout(Map.Entry<String, Item>... entries)
+	public Layout(Map.Entry<String, Integer>... entries)
 	throws IdDuplicationException {
 		for (final var entry : entries)
 			append(entry.getKey(), entry.getValue());
 	}
 
-	public final Layout append(Iterable<Map.Entry<String, Item>> entries)
+	public final Layout append(Iterable<Map.Entry<String, Integer>> entries)
 	throws IdDuplicationException {
 		for (final var entry : entries)
 			append(entry.getKey(), entry.getValue());
 		return this;
 	}
 
-	public final Layout append(String id, Item item)
+	public final Layout append(String id, Integer item)
 	throws IdDuplicationException {
 		final var nextIndex = entries.size();
 		if (itemIndices.putIfAbsent(id, nextIndex) != null)
