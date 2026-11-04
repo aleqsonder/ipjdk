@@ -18,28 +18,10 @@ void JNI_OnUnload(JavaVM *vm, void *reserved) {
 // </jni_management>
 
 
-// <Shared>
+// <SharedMemoryAllocator>
 
-JNIEXPORT jint JNICALL Java_ipj_Shared_getInt(
-	JNIEnv *jenv,
-	jclass jcls,
-	jlong ptr,
-	jint offset
-) { return *(int *)((char *)ptr + offset); }
-
-JNIEXPORT void JNICALL Java_ipj_Shared_set(
-	JNIEnv *jenv,
-	jclass jcls,
-	jlong ptr,
-	jint offset,
-	jint value
-) { *(int *)((char *)ptr + offset) = value; }
-
-JNIEXPORT jlong JNICALL Java_ipj_Shared_shalloc(
-	JNIEnv *jenv,
-	jclass jcls,
-	jstring id,
-	jint size
+JNIEXPORT jlong JNICALL Java_ipj_SharedMemoryAllocator_shprovide(
+	JNIEnv *jenv, jclass jcls, jstring id, jlong size
 ) {
 	assert(jenv);
 	assert(id);
@@ -47,24 +29,28 @@ JNIEXPORT jlong JNICALL Java_ipj_Shared_shalloc(
 	const char *const id_utf = (*jenv)->GetStringUTFChars(jenv, id, NULL);
 	size_t size_shuttle = size;
 
+	bool isNew = false;
+
 	const ipj_shm_handle_t
-	handle = ipj_shm_provide(id_utf, &size_shuttle, NULL);
+	handle = ipj_shm_provide(id_utf, &size_shuttle, &isNew);
 
 	(*jenv)->ReleaseStringUTFChars(jenv, id, id_utf);
 
-	return handle;
+	if (handle == IPJ_SHM_INVALID_HANDLE)
+		return IPJ_SHM_INVALID_HANDLE;
+
+	return isNew ? -handle : handle;
 }
 
-JNIEXPORT void JNICALL Java_ipj_Shared_shfree(
-	JNIEnv *jenv,
-	jclass jcls,
-	jlong handle
-) {
-	assert(jenv);
-	ipj_shm_release(handle);
-}
+JNIEXPORT jlong JNICALL Java_ipj_SharedMemoryAllocator_shalloc(
+	JNIEnv *jenv, jclass jcls, jlong size
+) { return ipj_shm_alloc(size); }
 
-// </Shared>
+JNIEXPORT void JNICALL Java_ipj_SharedMemoryAllocator_shrelease(
+	JNIEnv *jenv, jclass jcls, jlong handle
+) { ipj_shm_release(handle); }
+
+// </SharedMemoryAllocator>
 
 
 // <MemoryBlock>
