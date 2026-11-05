@@ -2,27 +2,15 @@
 #define IPJ_ALLOCATOR_H
 
 #include <stddef.h>
+#include <stdint.h>
 
-typedef struct ipj_allocator ipj_allocator_t;
+struct ipj_allocator { uint32_t capacity, _bump; uint8_t arena[]; };
 
-ipj_allocator_t *ipj_allocator_markup(size_t bufsize, void *buf);
+#define IPJ_ALLOCATOR_INITIAL(BUFSIZE) ((struct ipj_allocator) { \
+	.capacity = (BUFSIZE) - sizeof(struct ipj_allocator), \
+	._bump = 0 })
 
-ipj_allocator_t *ipj_allocator_checkout(void *);
-void *ipj_allocator_uncheckout(ipj_allocator_t *);
-
-void *ipj_alloc(ipj_allocator_t *, size_t size);
-void ipj_free(ipj_allocator_t *, void *mem);
-
-typedef ptrdiff_t ipj_offset_t;
-#define IPJ_INVALID_OFFSET PTRDIFF_MAX
-
-// Returns IPJ_INVALID_OFFSET on out-of-range
-ipj_offset_t ipj_mem_offset(const ipj_allocator_t *, const void *mem);
-
-// Returns NULL on out-of-range
-void *ipj_offset_resolve(ipj_allocator_t *, ipj_offset_t offset);
-const void *ipj_offset_resolve_const(
-	const ipj_allocator_t *,
-	ipj_offset_t offset);
+void *ipj_alloc(struct ipj_allocator *, size_t size);
+void ipj_free(struct ipj_allocator *, void *mem);
 
 #endif

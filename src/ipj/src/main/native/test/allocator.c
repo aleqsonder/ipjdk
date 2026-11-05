@@ -3,25 +3,9 @@
 
 #define BUFSIZE 1024
 uint8_t buf[BUFSIZE];
-ipj_allocator_t *allocator = NULL;
+struct ipj_allocator *const allocator = (struct ipj_allocator *)buf;
 
-void setup(void) {
-	allocator = ipj_allocator_markup(BUFSIZE, buf);
-}
-
-START_TEST(insufficient_buf_markup) {
-	static const size_t INSUF_BUFSIZE = 2;
-	uint8_t insuf_buf[INSUF_BUFSIZE];
-
-	ipj_allocator_t *const
-	a = ipj_allocator_markup(INSUF_BUFSIZE, insuf_buf);
-
-	ck_assert_ptr_null(a);
-} END_TEST
-
-START_TEST(sufficient_buf_markup) {
-	ck_assert_ptr_nonnull(allocator);
-} END_TEST
+void setup(void) { *allocator = IPJ_ALLOCATOR_INITIAL(BUFSIZE); }
 
 START_TEST(alloc) {
 	void *const mem = ipj_alloc(allocator, BUFSIZE / 2);
@@ -38,53 +22,12 @@ START_TEST(alloc_too_much) {
 	ck_assert_ptr_null(mem);
 } END_TEST
 
-START_TEST(offset) {
-	void *const mem = ipj_alloc(allocator, BUFSIZE / 2);
-	const ipj_offset_t offset = ipj_mem_offset(allocator, mem);
-
-	void *const restored_mem = ipj_offset_resolve(allocator, offset);
-	ck_assert_ptr_eq(mem, restored_mem);
-
-	const void *const
-	restored_const_mem = ipj_offset_resolve_const(allocator, offset);
-	ck_assert_ptr_eq(mem, restored_const_mem);
-} END_TEST
-
-START_TEST(offset_of_NULL) {
-	const ipj_offset_t offset = ipj_mem_offset(allocator, NULL);
-	ck_assert(offset == IPJ_INVALID_OFFSET);
-} END_TEST
-
-START_TEST(offset_of_out_of_range) {
-	const ipj_offset_t offset = ipj_mem_offset(allocator, buf + BUFSIZE);
-	ck_assert(offset == IPJ_INVALID_OFFSET);
-} END_TEST
-
-START_TEST(resolve_out_of_range) {
-	void *const mem = ipj_offset_resolve(allocator, BUFSIZE);
-	ck_assert_ptr_null(mem);
-} END_TEST
-
-START_TEST(resolve_INVALID_OFFSET) {
-	void *const mem = ipj_offset_resolve(allocator, IPJ_INVALID_OFFSET);
-	ck_assert_ptr_null(mem);
-} END_TEST
-
 int main(void) {
-	TCase *const fixtureless_tc = tcase_create("fixtureless");
-	tcase_add_test(fixtureless_tc, insufficient_buf_markup);
-
 	TCase *const main_tc = tcase_create("main");
 	tcase_add_checked_fixture(main_tc, setup, NULL);
-	tcase_add_test(main_tc, sufficient_buf_markup);
 	tcase_add_test(main_tc, alloc);
 	tcase_add_test(main_tc, alloc0);
 	tcase_add_test(main_tc, alloc_too_much);
-	tcase_add_test(main_tc, offset);
-	tcase_add_test(main_tc, offset_of_NULL);
-	tcase_add_test(main_tc, offset_of_out_of_range);
-	tcase_add_test(main_tc, resolve_out_of_range);
-	tcase_add_test(main_tc, resolve_INVALID_OFFSET);
 
 	Suite *const s = suite_create("allocator");
 	suite_add_tcase(s, main_tc);
