@@ -1,4 +1,4 @@
-package ipj;
+package ipj.memory;
 
 import java.util.List;
 import java.security.KeyException;
@@ -11,8 +11,10 @@ public class Layout {
 		public IdDuplicationException(String id) { super(id); }
 	}
 
-	private static record Entry(int offset, int size) {
-		public final int getNextOffset() { return offset + size; }
+	private static record Entry(int offsetBytes, int sizeBytes) {
+		public final int getNextOffset() {
+			return offsetBytes + sizeBytes;
+		}
 	};
 
 	private List<Entry> entries = new ArrayList<>();
@@ -34,13 +36,13 @@ public class Layout {
 		return this;
 	}
 
-	public final Layout append(String id, Integer item)
+	public final Layout append(String id, int sizeBytes)
 	throws IdDuplicationException {
 		final var nextIndex = entries.size();
 		if (itemIndices.putIfAbsent(id, nextIndex) != null)
 			throw new IdDuplicationException(id);
 
-		entries.add(new Entry(getSize(), item));
+		entries.add(new Entry(getSize(), sizeBytes));
 		return this;
 	}
 
@@ -52,6 +54,6 @@ public class Layout {
 		final var index = itemIndices.get(id);
 		if (index == null)
 			throw new KeyException(id);
-		return entries.get(index).offset();
+		return entries.get(index).offsetBytes();
 	}
 }
