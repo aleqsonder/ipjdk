@@ -11,6 +11,7 @@ struct ipj_allocator { uint32_t capacity, _bump; uint8_t arena[]; };
 	._bump = 0 })
 
 void *ipj_alloc(struct ipj_allocator *, size_t size);
+void *ipj_realloc(struct ipj_allocator *, void *mem, size_t size);
 void ipj_free(struct ipj_allocator *, void *mem);
 
 #endif

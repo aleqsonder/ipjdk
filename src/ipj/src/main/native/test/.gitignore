@@ -1,7 +1,6 @@
 # executables
 allocator
-obj
-objmap
+map_u32
 
 # cache
 *.dSYM

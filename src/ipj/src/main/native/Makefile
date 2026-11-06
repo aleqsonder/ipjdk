@@ -11,9 +11,8 @@ ipjshmem.dll: $(patsubst %.c,%.o,$(wildcard src/share/*.c)) src/windows/shmmap.o
 test/%: CFLAGS+=-g $(shell pkg-config --cflags check)
 test/%: LDLIBS+=$(shell pkg-config --libs check)
 test/allocator: src/share/allocator.o
-test/obj: src/share/obj.o
-test/objmap: $(addprefix src/share/,objmap.o allocator.o obj.o)
-test/shmem: $(addprefix src/share/,objmap.o allocator.o obj.o shmem.o) src/windows/shmmap.o
+test/map_u32: $(addprefix src/share/,map_u32.o allocator.o)
+test/shmem: $(addprefix src/share/,map_u32.o allocator.o shmem.o) src/windows/shmmap.o
 
 clean:
 	$(FIND) . \( -name "*.o" -or -name "*.exe" \) -delete
