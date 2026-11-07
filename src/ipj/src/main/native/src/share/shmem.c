@@ -4,7 +4,7 @@
 
 #include "shmem.h"
 #include "shmmap.h"
-#include "objmap.h"
+#include "map_u32.h"
 
 // <settings>
 
@@ -31,8 +31,7 @@
 
 // <globals>
 
-static ipj_allocator_t *allocator = NULL;
-static struct ipj_objmap objmap;
+static struct ipj_map_u32 map;
 
 static ipj_shm_t *mapbuf = NULL, *arena = NULL;
 
@@ -48,12 +47,19 @@ static void *resolve_handle(ipj_shm_handle_t handle);
 // </globals>
 
 
+// <obj>
+
+struct obj { uint32_t refcount, payload_size; uint8_t payload[]; };
+
+// </obj>
+
+
 // <utils>
 
 static size_t minz(size_t l, size_t r) { return l < r ? l : r; }
 
 static size_t get_io_byte_count(
-	const ipj_obj_t *obj,
+	const struct obj *,
 	size_t offset,
 	size_t requested_size);
 
@@ -64,17 +70,13 @@ int ipj_shm_init(void) { return objmap_init(); }
 void ipj_shm_cleanup(void) { objmap_destroy(); }
 
 ipj_shm_handle_t ipj_shm_alloc(size_t size) {
-	const size_t total_size = IPJ_OBJ_MIN_SIZE + size;
+	const size_t total_size = sizeof(struct obj) + size;
 
-	void *const objbuf = ipj_alloc(allocator, total_size);
-	if (!objbuf)
-		return IPJ_SHM_INVALID_HANDLE;
-
-	ipj_obj_t *const obj = ipj_obj_markup(objbuf, NULL, size);
+	struct obj *const obj = ipj_alloc(map.allocator, total_size);
 	if (!obj)
-		return IPJ_SHM_INVALID_HANDLE;
+		return IPJ_SHM_HANDLE_INVALID;
 
-	ipj_obj_addref(obj);
+	*obj = (struct obj) { .refcount = 1, .payload_size = size };
 	return get_handle(obj);
 }
 
@@ -88,11 +90,11 @@ ipj_shm_handle_t ipj_shm_provide(
 	const size_t total_size = size ? *size : 0;
 
 	bool is_new_local = false;
-	ipj_obj_t *const obj = ipj_objmap_provide(
-		&objmap, name, total_size, &is_new_local);
+	uint32_t *const obj_offset = ipj_map_u32_provide(
+		&map, name, total_size, &is_new_local);
 
 	if (!obj)
-		return IPJ_SHM_INVALID_HANDLE;
+		return IPJ_SHM_HANDLE_INVALID;
 
 	if (size)
 		*size = ipj_obj_payload_size(obj);
@@ -105,12 +107,12 @@ ipj_shm_handle_t ipj_shm_provide(
 }
 
 void ipj_shm_release(ipj_shm_handle_t handle) {
-	if (handle != IPJ_SHM_INVALID_HANDLE) {
+	if (handle != IPJ_SHM_HANDLE_INVALID) {
 		ipj_obj_t *const obj = ipj_offset_resolve(allocator, handle);
 		if (ipj_obj_release(obj)) {
 			if (ipj_obj_has_name(obj)) {
 				const char *const id = ipj_obj_id_const(obj);
-				ipj_objmap_erase(&objmap, id);
+				ipj_objmap_erase(&map, id);
 			} else {
 				ipj_free(allocator, ipj_obj_uncheckout(obj));
 			}
@@ -126,7 +128,7 @@ ssize_t ipj_shm_read(
 ) {
 	assert(size == 0 || dest);
 
-	if (handle == IPJ_SHM_INVALID_HANDLE)
+	if (handle == IPJ_SHM_HANDLE_INVALID)
 		return -1;
 
 	ipj_obj_t *const obj = resolve_handle(handle);
@@ -146,7 +148,7 @@ ssize_t ipj_shm_write(
 ) {
 	assert(size == 0 || src);
 
-	if (handle == IPJ_SHM_INVALID_HANDLE)
+	if (handle == IPJ_SHM_HANDLE_INVALID)
 		return -1;
 
 	ipj_obj_t *const obj = resolve_handle(handle);
@@ -234,12 +236,12 @@ void allocator_destroy(void) {
 
 ipj_shm_handle_t get_handle(void *mem) {
 	if (!mem)
-		return IPJ_SHM_INVALID_HANDLE;
+		return IPJ_SHM_HANDLE_INVALID;
 	return ipj_mem_offset(allocator, mem);
 }
 
 void *resolve_handle(ipj_shm_handle_t handle) {
-	if (handle == IPJ_SHM_INVALID_HANDLE)
+	if (handle == IPJ_SHM_HANDLE_INVALID)
 		return NULL;
 	return ipj_offset_resolve(allocator, handle);
 }

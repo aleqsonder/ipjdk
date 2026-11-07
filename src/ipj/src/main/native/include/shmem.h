@@ -10,7 +10,7 @@ int ipj_shm_init(void);
 void ipj_shm_cleanup(void);
 
 typedef uint32_t ipj_shm_handle_t;
-#define IPJ_SHM_INVALID_HANDLE UINT32_MAX
+#define IPJ_SHM_HANDLE_INVALID 0
 
 ipj_shm_handle_t ipj_shm_alloc(size_t size);
 
