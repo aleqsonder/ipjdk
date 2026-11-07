@@ -8,22 +8,17 @@
 
 // <settings>
 
-#ifndef IPJ_OBJMAP_SIZE
-	// 1MB
-	#define IPJ_OBJMAP_SIZE 1<<20
-#endif
-
-#ifndef IPJ_OBJMAP_FNAME
-	#define IPJ_OBJMAP_FNAME "ipj-objmap"
+#ifndef IPJ_SHBUF_FNAME
+	#define IPJ_SHBUF_FNAME "ipj-shbuf"
 #endif
 
 #ifndef IPJ_SHBUF_SIZE
 	// 4MB
-	#define IPJ_SHBUF_SIZE 4<<20
+	#define IPJ_SHBUF_SIZE (4<<20)
 #endif
 
-#ifndef IPJ_SHBUF_FNAME
-	#define IPJ_SHBUF_FNAME "ipj-shbuf"
+#ifndef IPJ_MAPSIZE_RATIO
+	#define IPJ_MAPSIZE_RATIO 0.2
 #endif
 
 // </settings>
@@ -31,15 +26,9 @@
 
 // <globals>
 
-static struct ipj_map_u32 map;
-
-static ipj_shm_t *mapbuf = NULL, *arena = NULL;
-
-static int allocator_init(void);
-static void allocator_destroy(void);
-
-static int objmap_init(void);
-static void objmap_destroy(void);
+static ipj_shm_t *shm = NULL;
+static struct ipj_map_u32 *map = NULL;
+static struct ipj_allocator *allocator = NULL;
 
 static ipj_shm_handle_t get_handle(void *mem);
 static void *resolve_handle(ipj_shm_handle_t handle);
@@ -66,13 +55,37 @@ static size_t get_io_byte_count(
 // </utils>
 
 
-int ipj_shm_init(void) { return objmap_init(); }
-void ipj_shm_cleanup(void) { objmap_destroy(); }
+int ipj_shm_init(void) {
+	bool is_new = false;
+	shm = ipj_shm_open(IPJ_SHBUF_FNAME, IPJ_SHBUF_SIZE, &is_new);
+
+	if (!shm)
+		return 1;
+
+	void *const shbuf = ipj_shm_data(shm);
+
+	static const size_t
+		map_size = IPJ_SHBUF_SIZE * IPJ_MAPSIZE_RATIO,
+		allocator_size = IPJ_SHBUF_SIZE - map_size,
+		map_cell_count = map_size / sizeof(*map->cells);
+
+	map = shbuf;
+	allocator = (void *)((uint8_t *)shbuf + map_size);
+
+	if (is_new) {
+		*map = IPJ_MAP_U32_INITIAL(map_cell_count);
+		*allocator = IPJ_ALLOCATOR_INITIAL(allocator_size);
+	}
+
+	return 0;
+}
+
+void ipj_shm_cleanup(void) { ipj_shm_close(shm); }
 
 ipj_shm_handle_t ipj_shm_alloc(size_t size) {
 	const size_t total_size = sizeof(struct obj) + size;
 
-	struct obj *const obj = ipj_alloc(map.allocator, total_size);
+	struct obj *const obj = ipj_alloc(allocator, total_size);
 	if (!obj)
 		return IPJ_SHM_HANDLE_INVALID;
 
@@ -87,27 +100,36 @@ ipj_shm_handle_t ipj_shm_provide(
 ) {
 	assert(name);
 
-	const size_t total_size = size ? *size : 0;
-
 	bool is_new_local = false;
-	uint32_t *const obj_offset = ipj_map_u32_provide(
-		&map, name, total_size, &is_new_local);
+	uint32_t *const handle_mapped = ipj_map_u32_provide(
+		map, allocator, name, &is_new_local);
 
-	if (!obj)
+	if (!handle_mapped)
 		return IPJ_SHM_HANDLE_INVALID;
 
-	if (size)
-		*size = ipj_obj_payload_size(obj);
+	if (is_new_local) {
+		const ipj_shm_handle_t handle = ipj_shm_alloc(size ? *size : 0);
+		if (handle == IPJ_SHM_HANDLE_INVALID)
+			goto map_cleanup;
+		*handle_mapped = handle;
+	} else {
+		struct obj *const obj = resolve_handle(*handle_mapped);
+		assert(obj);
+		obj->refcount++;
+	}
 
-	if (is_new)
-		*is_new = is_new_local;
+	goto finish;
 
-	ipj_obj_addref(obj);
-	return get_handle(obj);
+map_cleanup:
+	ipj_map_u32_erase(map, allocator, name);
+
+finish:
+	return *handle_mapped;
 }
 
 void ipj_shm_release(ipj_shm_handle_t handle) {
 	if (handle != IPJ_SHM_HANDLE_INVALID) {
+		struct obj *const obj = resolve_handle(handle);
 		ipj_obj_t *const obj = ipj_offset_resolve(allocator, handle);
 		if (ipj_obj_release(obj)) {
 			if (ipj_obj_has_name(obj)) {
