@@ -1,6 +1,7 @@
 # executables
 allocator
-map_u32
+shmem
+strset
 
 # cache
 *.dSYM
