@@ -2,6 +2,7 @@
 allocator
 shmem
 strset
+hotel
 
 # cache
 *.dSYM

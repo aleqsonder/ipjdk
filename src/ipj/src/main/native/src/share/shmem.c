@@ -4,7 +4,7 @@
 
 #include "shmem.h"
 #include "shmmap.h"
-#include "map_u32.h"
+#include "strset.h"
 
 // <settings>
 
@@ -17,8 +17,8 @@
 	#define IPJ_SHBUF_SIZE (4<<20)
 #endif
 
-#ifndef IPJ_MAPSIZE_RATIO
-	#define IPJ_MAPSIZE_RATIO 0.2
+#ifndef IPJ_ARENA_SIZE_RATIO
+	#define IPJ_ARENA_SIZE_RATIO 0.8
 #endif
 
 // </settings>
@@ -27,8 +27,8 @@
 // <globals>
 
 static ipj_shm_t *shm = NULL;
-static struct ipj_map_u32 *map = NULL;
-static struct ipj_allocator *allocator = NULL;
+static struct ipj_strset set;
+static uint32_t *obj_offsets = NULL;
 
 static ipj_shm_handle_t get_handle(void *mem);
 static void *resolve_handle(ipj_shm_handle_t handle);
@@ -63,18 +63,26 @@ int ipj_shm_init(void) {
 		return 1;
 
 	void *const shbuf = ipj_shm_data(shm);
+	assert(shbuf);
 
 	static const size_t
-		map_size = IPJ_SHBUF_SIZE * IPJ_MAPSIZE_RATIO,
-		allocator_size = IPJ_SHBUF_SIZE - map_size,
-		map_cell_count = map_size / sizeof(*map->cells);
+		arena_size = IPJ_SHBUF_SIZE * IPJ_ARENA_SIZE_RATIO,
+		map_size = IPJ_SHBUF_SIZE - arena_size,
+		obj_count_limit
+			= (map_size - sizeof(struct ipj_strset_cell_array))
+			/ (sizeof(struct ipj_strset_cell) + sizeof(*obj_offsets));
 
-	map = shbuf;
-	allocator = (void *)((uint8_t *)shbuf + map_size);
+	set = (struct ipj_strset) {
+		.allocator = shbuf,
+		.cell_array = (void *)((uint8_t *)shbuf + arena_size) };
+
+	obj_offsets = (void *)((uint8_t *)shbuf + arena_size
+		+ obj_count_limit * sizeof(struct ipj_strset_cell));
+	
 
 	if (is_new) {
-		*map = IPJ_MAP_U32_INITIAL(map_cell_count);
-		*allocator = IPJ_ALLOCATOR_INITIAL(allocator_size);
+		*set.cell_array = IPJ_STRSET_CELL_ARRAY_INITIAL(obj_count_limit),
+		*set.allocator = IPJ_ALLOCATOR_INITIAL(arena_size);
 	}
 
 	return 0;
@@ -85,7 +93,7 @@ void ipj_shm_cleanup(void) { ipj_shm_close(shm); }
 ipj_shm_handle_t ipj_shm_alloc(size_t size) {
 	const size_t total_size = sizeof(struct obj) + size;
 
-	struct obj *const obj = ipj_alloc(allocator, total_size);
+	struct obj *const obj = ipj_alloc(set.allocator, total_size);
 	if (!obj)
 		return IPJ_SHM_HANDLE_INVALID;
 
@@ -101,10 +109,9 @@ ipj_shm_handle_t ipj_shm_provide(
 	assert(name);
 
 	bool is_new_local = false;
-	uint32_t *const handle_mapped = ipj_map_u32_provide(
-		map, allocator, name, &is_new_local);
+	const ssize_t index = ipj_strset_provide(&set, name, &is_new_local);
 
-	if (!handle_mapped)
+	if (index == -1)
 		return IPJ_SHM_HANDLE_INVALID;
 
 	if (is_new_local) {
