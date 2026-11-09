@@ -101,13 +101,21 @@ ssize_t ipj_shm_provide(const char *name, size_t *size, bool *is_new) {
 		return -1;
 
 	if (is_new_local) {
-		struct shunit *const unit = ipj_alloc(
-			layout.allocator, size ? *size : 0);
+		const size_t
+			local_size = size ? *size : 0,
+			total_size = sizeof(struct shunit) + local_size;
+
+		struct shunit
+			*const unit = ipj_alloc(layout.allocator, total_size);
 
 		if (!unit) {
 			ipj_strset_erase(layout.names, layout.allocator, index);
 			return -1;
 		}
+
+		*unit = (struct shunit) {
+			.payload_size = local_size,
+			.refcount = 1 };
 
 		layout.named_unit_offsets[index] = get_offset(unit);
 	} else {
@@ -115,6 +123,9 @@ ssize_t ipj_shm_provide(const char *name, size_t *size, bool *is_new) {
 			layout.named_unit_offsets[index]);
 		assert(unit);
 		unit->refcount++;
+
+		if (size)
+			*size = unit->payload_size;
 	}
 
 	if (is_new)
