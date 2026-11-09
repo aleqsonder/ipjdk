@@ -11,3 +11,6 @@ hello
 # cache
 .cache
 compile_commands.json
+
+# env preferences
+.vscode
