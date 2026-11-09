@@ -3,11 +3,8 @@ package ipj.memory;
 /**
  * Pointer into a shared memory region.
  *
- * <p>A pointer made by a public constructor owns a reference to
- * the region and releases it on {@link #close()}. Pointers made by
- * {@link #skip(long)} are derived: they share the region but never
- * release it, so they must not be used after the owning pointer is
- * closed.
+ * A pointer made by a public constructor owns a reference to
+ * the region and releases it on {@link #close()}.
  */
 public final class SharedPointer implements Pointer, AutoCloseable {
 	static {
@@ -18,7 +15,6 @@ public final class SharedPointer implements Pointer, AutoCloseable {
 
 	private long handle;
 	private final long offsetBytes;
-	private final boolean isDerived;
 	private final boolean isNew;
 
 	/**
@@ -31,7 +27,6 @@ public final class SharedPointer implements Pointer, AutoCloseable {
 
 		this.handle = Math.abs(newHandle);
 		this.offsetBytes = 0;
-		this.isDerived = false;
 		this.isNew = newHandle < 0;
 	}
 
@@ -42,14 +37,12 @@ public final class SharedPointer implements Pointer, AutoCloseable {
 
 		this.handle = newHandle;
 		this.offsetBytes = 0;
-		this.isDerived = false;
 		this.isNew = true;
 	}
 
 	private SharedPointer(long handle, long offset) {
 		this.handle = handle;
 		this.offsetBytes = offset;
-		this.isDerived = true;
 		this.isNew = false;
 	}
 
@@ -60,12 +53,10 @@ public final class SharedPointer implements Pointer, AutoCloseable {
 
 	/**
 	 * Returns {@code true} if the region was created by the
-	 * constructor of this pointer, {@code false} if it already existed
-	 * or this pointer is derived.
+	 * constructor of this pointer, {@code false} if it already existed.
 	 */
 	public boolean isNew() { return isNew; }
 
-	public boolean isDerived() { return isDerived; }
 	public long getHandle() { return handle; }
 	public long getOffsetBytes() { return offsetBytes; }
 
@@ -77,7 +68,7 @@ public final class SharedPointer implements Pointer, AutoCloseable {
 
 	@Override
 	public void close() {
-		if (!isDerived && handle != INVALID_HANDLE) {
+		if (handle != INVALID_HANDLE) {
 			release(handle);
 			handle = INVALID_HANDLE;
 		}

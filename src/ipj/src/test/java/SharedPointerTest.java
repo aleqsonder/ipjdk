@@ -65,7 +65,6 @@ public class SharedPointerTest {
 	@Test
 	void anonymousIsNew() {
 		assertTrue(ptr.isNew());
-		assertFalse(ptr.isDerived());
 	}
 
 	@Test
@@ -87,7 +86,6 @@ public class SharedPointerTest {
 	void derivedCloseKeepsRegion() {
 		final int value = 777;
 		final SharedPointer derived = ptr.skip(4);
-		assertTrue(derived.isDerived());
 		assertFalse(derived.isNew());
 
 		derived.set32(value);

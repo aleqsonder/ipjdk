@@ -18,48 +18,46 @@ void JNI_OnUnload(JavaVM *vm, void *reserved) {
 // </jni_management>
 
 
-// <SharedMemoryAllocator>
+// <SharedPointer>
 
-JNIEXPORT jlong JNICALL Java_ipj_SharedMemoryAllocator_shprovide(
+JNIEXPORT jlong JNICALL Java_ipj_memory_SharedPointer_provide(
 	JNIEnv *jenv, jclass jcls, jstring id, jlong size
 ) {
 	assert(jenv);
 	assert(id);
 
-	const char *const id_utf = (*jenv)->GetStringUTFChars(jenv, id, NULL);
 	size_t size_shuttle = size;
 
 	bool isNew = false;
 
-	const ipj_shm_handle_t
-	handle = ipj_shm_provide(id_utf, &size_shuttle, &isNew);
-
+	const char *const id_utf = (*jenv)->GetStringUTFChars(jenv, id, NULL);
+	const ssize_t handle = ipj_shm_provide(id_utf, &size_shuttle, &isNew);
 	(*jenv)->ReleaseStringUTFChars(jenv, id, id_utf);
 
-	if (handle == IPJ_SHM_INVALID_HANDLE)
-		return IPJ_SHM_INVALID_HANDLE;
+	if (handle == -1)
+		return 0;
 
 	return isNew ? -handle : handle;
 }
 
-JNIEXPORT jlong JNICALL Java_ipj_SharedMemoryAllocator_shalloc(
+JNIEXPORT jlong JNICALL Java_ipj_memory_SharedPointer_alloc(
 	JNIEnv *jenv, jclass jcls, jlong size
 ) { return ipj_shm_alloc(size); }
 
-JNIEXPORT void JNICALL Java_ipj_SharedMemoryAllocator_shrelease(
+JNIEXPORT void JNICALL Java_ipj_memory_SharedPointer_release(
 	JNIEnv *jenv, jclass jcls, jlong handle
 ) { ipj_shm_release(handle); }
 
-// </SharedMemoryAllocator>
-
-
-// <MemoryBlock>
 
 #define DEF_MEMORY_BLOCK_SET(BIT_COUNT, JTYPE) \
-	JNIEXPORT void JNICALL Java_ipj_MemoryBlock_set##BIT_COUNT( \
+	JNIEXPORT void JNICALL Java_ipj_memory_SharedPointer_set##BIT_COUNT( \
 		JNIEnv *jenv, jclass jcls, \
 		jlong handle, jlong offsetBytes, JTYPE value \
-	) { ipj_shm_write(handle, offsetBytes, &value, sizeof(value)); }
+	) { \
+		void *const ptr = ipj_shm_handle_resolve(handle); \
+		if (ptr != NULL) /* FIXME: Throw an exception on NULL */ \
+			*(JTYPE *)((intptr_t)ptr + offsetBytes) = value; \
+	}
 
 DEF_MEMORY_BLOCK_SET(8, jbyte)
 DEF_MEMORY_BLOCK_SET(16, jshort)
@@ -70,13 +68,14 @@ DEF_MEMORY_BLOCK_SET(64, jlong)
 
 
 #define DEF_MEMORY_BLOCK_GET(BIT_COUNT, JTYPE) \
-	JNIEXPORT JTYPE JNICALL Java_ipj_MemoryBlock_get##BIT_COUNT( \
+	JNIEXPORT JTYPE JNICALL Java_ipj_memory_SharedPointer_get##BIT_COUNT( \
 		JNIEnv *jenv, jclass jcls, \
 		jlong handle, jlong offsetBytes \
 	) { \
-		JTYPE value; \
-		ipj_shm_read(handle, offsetBytes, &value, sizeof(value)); \
-		return value; \
+		void *const ptr = ipj_shm_handle_resolve(handle); \
+		if (ptr != NULL) /* FIXME: Throw an exception on NULL */ \
+			return *(JTYPE *)((intptr_t)ptr + offsetBytes); \
+		return 0; \
 	}
 
 DEF_MEMORY_BLOCK_GET(8, jbyte)
@@ -86,4 +85,4 @@ DEF_MEMORY_BLOCK_GET(64, jlong)
 
 #undef DEF_MEMORY_BLOCK_GET
 
-// </MemoryBlock>
+// </SharedPointer>
