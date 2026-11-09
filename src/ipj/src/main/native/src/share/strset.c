@@ -19,7 +19,10 @@ static size_t djb2(const char *s);
 #define NOT_FOUND (-1)
 #define INVALID_OFFSET 0
 
-static ssize_t probe(const struct ipj_strset *set, const char *key);
+static ssize_t probe(
+	const struct ipj_strset *set,
+	const struct ipj_allocator *allocator,
+	const char *key);
 
 #define offset_is_in_range(ALLOCATOR, OFFSET) \
 	(sizeof(struct ipj_allocator) <= (OFFSET) \
@@ -38,28 +41,29 @@ static void *resolve_offset(
 
 ssize_t ipj_strset_provide(
 	struct ipj_strset *set,
+	struct ipj_allocator *allocator,
 	const char *key,
 	bool *is_new
 ) {
 	assert(set);
 	assert(key);
 
-	const ssize_t index = probe(set, key);
+	const ssize_t index = probe(set, allocator, key);
 	if (index != NOT_FOUND) {
 		struct ipj_strset_cell
-			*const cell = &set->cell_array->cells[index];
+			*const cell = &set->cells[index];
 
 		const bool is_new_local = cell->key_offset == INVALID_OFFSET;
 
 		if (is_new_local) {
-			char *const key_stored = ipj_alloc(
-				set->allocator, strlen(key) + 1);
+			const size_t keysize = strlen(key) + 1;
+			char *const key_stored = ipj_alloc(allocator, keysize);
 
 			if (!key_stored)
 				return NOT_FOUND;
 
 			strcpy(key_stored, key);
-			cell->key_offset = get_offset(set->allocator, key_stored);
+			cell->key_offset = get_offset(allocator, key_stored);
 		}
 
 		if (is_new)
@@ -69,29 +73,35 @@ ssize_t ipj_strset_provide(
 	return index;
 }
 
-ssize_t ipj_strset_search(struct ipj_strset *set, const char *key) {
+ssize_t ipj_strset_search(
+	const struct ipj_strset *set,
+	const struct ipj_allocator *allocator,
+	const char *key
+) {
 	assert(set);
 	assert(key);
 
-	const ssize_t index = probe(set, key);
+	const ssize_t index = probe(set, allocator, key);
 
 	if (index == NOT_FOUND)
 		return NOT_FOUND;
 
-	struct ipj_strset_cell *const cell = &set->cell_array->cells[index];
+	const struct ipj_strset_cell *const cell = &set->cells[index];
 	return cell->key_offset == INVALID_OFFSET ? NOT_FOUND : index;
 }
 
-void ipj_strset_erase(struct ipj_strset *set, ssize_t index) {
+void ipj_strset_erase(
+	struct ipj_strset *set,
+	struct ipj_allocator *allocator,
+	ssize_t index) {
 	assert(set);
 	
 	if (index == NOT_FOUND)
 		return;
 
-	struct ipj_strset_cell *const cell = &set->cell_array->cells[index];
-	char *const key_stored = resolve_offset(
-		set->allocator, cell->key_offset);
-	ipj_free(set->allocator, key_stored);
+	struct ipj_strset_cell *const cell = &set->cells[index];
+	char *const key_stored = resolve_offset(allocator, cell->key_offset);
+	ipj_free(allocator, key_stored);
 
 	cell->key_offset = INVALID_OFFSET;
 }
@@ -125,25 +135,29 @@ void *resolve_offset(
 		: INVALID_OFFSET;
 }
 
-ssize_t probe(const struct ipj_strset *set, const char *key) {
+ssize_t probe(
+	const struct ipj_strset *set,
+	const struct ipj_allocator *allocator,
+	const char *key
+) {
 	assert(set);
 	assert(key);
 
 	const size_t
-		cell_count = set->cell_array->count,
+		cell_count = set->count,
 		h = djb2(key);
 
 	for (size_t i = 0; i < cell_count; ++i) {
 		const size_t index = (h + i) % cell_count;
 
 		const struct ipj_strset_cell
-			*const cell = &set->cell_array->cells[index];
+			*const cell = &set->cells[index];
 
 		if (cell->key_offset == INVALID_OFFSET)
 			return index;
 
 		const char *const key_stored = resolve_offset(
-			set->allocator, cell->key_offset);
+			allocator, cell->key_offset);
 		assert(key_stored);
 
 		if (strcmp(key, key_stored) == 0)
