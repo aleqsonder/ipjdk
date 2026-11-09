@@ -2,9 +2,9 @@
 #include <stdbool.h>
 #include <assert.h>
 
-#include "shmem.h"
 #include "shmmap.h"
-#include "strset.h"
+#include "layout.h"
+
 
 // <settings>
 
@@ -13,12 +13,15 @@
 #endif
 
 #ifndef IPJ_SHBUF_SIZE
-	// 4MB
-	#define IPJ_SHBUF_SIZE (4<<20)
+	#define IPJ_SHBUF_SIZE (4<<20) /* 4MB */
 #endif
 
 #ifndef IPJ_ARENA_SIZE_RATIO
-	#define IPJ_ARENA_SIZE_RATIO 0.8
+	#define IPJ_ARENA_SIZE_RATIO .8f
+#endif
+
+#ifndef IPJ_NAMED_UNIT_RATIO
+	#define IPJ_NAMED_UNIT_RATIO .5f
 #endif
 
 // </settings>
@@ -27,30 +30,27 @@
 // <globals>
 
 static ipj_shm_t *shm = NULL;
-static struct ipj_strset set;
-static uint32_t *obj_offsets = NULL;
 
-static ipj_shm_handle_t get_handle(void *mem);
-static void *resolve_handle(ipj_shm_handle_t handle);
+static const struct ipj_layout_settings LAYOUT_SETTINGS = {
+	.arena_size_ratio = IPJ_ARENA_SIZE_RATIO,
+	.named_unit_ratio = IPJ_NAMED_UNIT_RATIO };
+static struct ipj_layout layout;
 
 // </globals>
 
 
-// <obj>
-
-struct obj { uint32_t refcount, payload_size; uint8_t payload[]; };
-
-// </obj>
-
-
 // <utils>
 
-static size_t minz(size_t l, size_t r) { return l < r ? l : r; }
+struct shunit { uint32_t refcount, payload_size; uint8_t payload[]; };
 
-static size_t get_io_byte_count(
-	const struct obj *,
-	size_t offset,
-	size_t requested_size);
+static ptrdiff_t get_offset(const struct shunit *mem);
+static struct shunit *resolve_offset(ptrdiff_t offset);
+
+static ssize_t encode_handle_unnamed(size_t index);
+static ssize_t encode_handle_named(size_t index);
+
+enum handle_type { HANDLE_INVALID, HANDLE_NAMED, HANDLE_UNNAMED };
+static enum handle_type decode_handle(ssize_t handle, size_t *index);
 
 // </utils>
 
@@ -65,231 +65,132 @@ int ipj_shm_init(void) {
 	void *const shbuf = ipj_shm_data(shm);
 	assert(shbuf);
 
-	static const size_t
-		arena_size = IPJ_SHBUF_SIZE * IPJ_ARENA_SIZE_RATIO,
-		map_size = IPJ_SHBUF_SIZE - arena_size,
-		obj_count_limit
-			= (map_size - sizeof(struct ipj_strset_cell_array))
-			/ (sizeof(struct ipj_strset_cell) + sizeof(*obj_offsets));
-
-	set = (struct ipj_strset) {
-		.allocator = shbuf,
-		.cell_array = (void *)((uint8_t *)shbuf + arena_size) };
-
-	obj_offsets = (void *)((uint8_t *)shbuf + arena_size
-		+ obj_count_limit * sizeof(struct ipj_strset_cell));
-	
-
-	if (is_new) {
-		*set.cell_array = IPJ_STRSET_CELL_ARRAY_INITIAL(obj_count_limit),
-		*set.allocator = IPJ_ALLOCATOR_INITIAL(arena_size);
-	}
+	ipj_layout_init(&layout, &LAYOUT_SETTINGS, IPJ_SHBUF_SIZE, shbuf);
 
 	return 0;
 }
 
 void ipj_shm_cleanup(void) { ipj_shm_close(shm); }
 
-ipj_shm_handle_t ipj_shm_alloc(size_t size) {
-	const size_t total_size = sizeof(struct obj) + size;
+ssize_t ipj_shm_alloc(size_t size) {
+	const size_t total_size = sizeof(struct shunit) + size;
 
-	struct obj *const obj = ipj_alloc(set.allocator, total_size);
-	if (!obj)
-		return IPJ_SHM_HANDLE_INVALID;
+	struct shunit *const unit = ipj_alloc(layout.allocator, total_size);
+	if (!unit)
+		return -1;
 
-	*obj = (struct obj) { .refcount = 1, .payload_size = size };
-	return get_handle(obj);
+	const ssize_t index = ipj_hotel_book(layout.hotel);
+	if (index == -1) {
+		ipj_free(layout.allocator, unit);
+		return -1;
+	}
+
+	layout.hotel->rooms[index] = get_offset(unit);
+	*unit = (struct shunit) { .refcount = 1, .payload_size = size };
+	return encode_handle_unnamed(index);
 }
 
-ipj_shm_handle_t ipj_shm_provide(
-	const char *name,
-	size_t *size,
-	bool *is_new
-) {
+ssize_t ipj_shm_provide(const char *name, size_t *size, bool *is_new) {
 	assert(name);
 
 	bool is_new_local = false;
-	const ssize_t index = ipj_strset_provide(&set, name, &is_new_local);
+	const ssize_t index = ipj_strset_provide(
+		layout.names, layout.allocator, name, &is_new_local);
 
 	if (index == -1)
-		return IPJ_SHM_HANDLE_INVALID;
+		return -1;
 
 	if (is_new_local) {
-		const ipj_shm_handle_t handle = ipj_shm_alloc(size ? *size : 0);
-		if (handle == IPJ_SHM_HANDLE_INVALID)
-			goto map_cleanup;
-		*handle_mapped = handle;
-	} else {
-		struct obj *const obj = resolve_handle(*handle_mapped);
-		assert(obj);
-		obj->refcount++;
-	}
+		struct shunit *const unit = ipj_alloc(
+			layout.allocator, size ? *size : 0);
 
-	goto finish;
-
-map_cleanup:
-	ipj_map_u32_erase(map, allocator, name);
-
-finish:
-	return *handle_mapped;
-}
-
-void ipj_shm_release(ipj_shm_handle_t handle) {
-	if (handle != IPJ_SHM_HANDLE_INVALID) {
-		struct obj *const obj = resolve_handle(handle);
-		ipj_obj_t *const obj = ipj_offset_resolve(allocator, handle);
-		if (ipj_obj_release(obj)) {
-			if (ipj_obj_has_name(obj)) {
-				const char *const id = ipj_obj_id_const(obj);
-				ipj_objmap_erase(&map, id);
-			} else {
-				ipj_free(allocator, ipj_obj_uncheckout(obj));
-			}
+		if (!unit) {
+			ipj_strset_erase(layout.names, layout.allocator, index);
+			return -1;
 		}
-	}
-}
 
-ssize_t ipj_shm_read(
-	ipj_shm_handle_t handle,
-	size_t offset,
-	void *dest,
-	size_t size
-) {
-	assert(size == 0 || dest);
-
-	if (handle == IPJ_SHM_HANDLE_INVALID)
-		return -1;
-
-	ipj_obj_t *const obj = resolve_handle(handle);
-	const size_t count = get_io_byte_count(obj, offset, size);
-
-	if (count > 0)
-		memcpy(dest, (uint8_t *)obj + offset, count);
-
-	return size - count;
-}
-
-ssize_t ipj_shm_write(
-	ipj_shm_handle_t handle,
-	size_t offset,
-	const void *src,
-	size_t size
-) {
-	assert(size == 0 || src);
-
-	if (handle == IPJ_SHM_HANDLE_INVALID)
-		return -1;
-
-	ipj_obj_t *const obj = resolve_handle(handle);
-	const size_t write_count = get_io_byte_count(obj, offset, size);
-
-	if (write_count > 0)
-		memcpy((uint8_t *)obj + offset, src, write_count);
-
-	return size - write_count;
-}
-
-
-// <globals-impl>
-
-int objmap_init(void) {
-	int status = allocator_init();
-	if (status)
-		return status;
-
-	bool is_new = false;
-	mapbuf = ipj_shm_open(IPJ_OBJMAP_FNAME, IPJ_OBJMAP_SIZE, &is_new);
-	if (mapbuf == NULL) {
-		status = 1;
-		goto final;
+		layout.named_unit_offsets[index] = get_offset(unit);
+	} else {
+		struct shunit *const unit = resolve_offset(
+			layout.named_unit_offsets[index]);
+		assert(unit);
+		unit->refcount++;
 	}
 
-	void *const shm_data = ipj_shm_data(mapbuf);
-	struct ipj_objmap_state *const state = is_new
-		? ipj_objmap_state_markup(IPJ_OBJMAP_SIZE, shm_data)
-		: ipj_objmap_state_checkout(shm_data);
-	if (state == NULL) {
-		status = 1;
-		goto shm_cleanup;
+	if (is_new)
+		*is_new = is_new_local;
+
+	return encode_handle_named(index);
+}
+
+void ipj_shm_release(ssize_t handle) {
+	struct shunit *unit = NULL;
+
+	size_t index;
+	switch (decode_handle(handle, &index)) {
+	case HANDLE_UNNAMED:
+		unit = resolve_offset(layout.hotel->rooms[index]);
+		break;
+	case HANDLE_NAMED:
+		unit = resolve_offset(layout.named_unit_offsets[index]);
+		ipj_strset_erase(layout.names, layout.allocator, index);
+		break;
+	default:
+		unit = NULL;
 	}
 
-	objmap = (struct ipj_objmap) {
-		.allocator = allocator,
-		.state = state };
-
-	goto final;
-
-shm_cleanup:
-	ipj_shm_close(mapbuf);
-
-final:
-	return status;
+	if (unit)
+		ipj_free(layout.allocator, unit);
 }
 
-int allocator_init(void) {
-	int status = 0;
+void *ipj_shm_handle_resolve(ssize_t handle) {
+	struct shunit *unit = NULL;
 
-	bool is_new = false;
-	arena = ipj_shm_open(IPJ_SHBUF_FNAME, IPJ_SHBUF_SIZE, &is_new);
-	if (arena == NULL) {
-		status = 1;
-		goto final;
+	size_t index;
+	switch (decode_handle(handle, &index)) {
+	case HANDLE_UNNAMED:
+		unit = resolve_offset(layout.hotel->rooms[index]);
+		break;
+	case HANDLE_NAMED:
+		unit = resolve_offset(layout.named_unit_offsets[index]);
+		break;
+	default:
+		unit = NULL;
 	}
 
-	void *const shm_data = ipj_shm_data(arena);
-	allocator = is_new
-		? ipj_allocator_markup(IPJ_SHBUF_SIZE, shm_data)
-		: ipj_allocator_checkout(shm_data);
-	if (allocator == NULL) {
-		status = 1;
-		goto shm_cleanup;
-	}
-
-	goto final;
-
-shm_cleanup:
-	ipj_shm_close(arena);
-
-final:
-	return status;
+	return unit ? unit->payload : NULL;
 }
-
-void objmap_destroy(void) {
-	ipj_shm_close(mapbuf);
-	allocator_destroy();
-}
-
-void allocator_destroy(void) {
-	ipj_shm_close(arena);
-}
-
-ipj_shm_handle_t get_handle(void *mem) {
-	if (!mem)
-		return IPJ_SHM_HANDLE_INVALID;
-	return ipj_mem_offset(allocator, mem);
-}
-
-void *resolve_handle(ipj_shm_handle_t handle) {
-	if (handle == IPJ_SHM_HANDLE_INVALID)
-		return NULL;
-	return ipj_offset_resolve(allocator, handle);
-}
-
-// </globals-impl>
 
 
 // <utils-impl>
 
-size_t get_io_byte_count(
-	const ipj_obj_t *obj,
-	size_t offset,
-	size_t requested_size
-) {
-	const size_t
-		obj_payload_size = ipj_obj_payload_size(obj),
-		limit = minz(obj_payload_size, offset + requested_size);
+ptrdiff_t get_offset(const struct shunit *mem) {
+	assert(mem);
+	return (intptr_t)mem - (intptr_t)layout.allocator;
+}
 
-	return limit > offset ? limit - offset : 0;
+struct shunit *resolve_offset(ptrdiff_t offset) {
+	return (struct shunit *)((intptr_t)layout.allocator + offset);
+}
+
+ssize_t encode_handle_unnamed(size_t index) {
+	return index + layout.names->count;
+}
+
+ssize_t encode_handle_named(size_t index) {
+	return index;
+}
+
+enum handle_type decode_handle(ssize_t handle, size_t *index) {
+	if (handle == -1)
+		return HANDLE_INVALID;
+
+	if (index)
+		*index = handle % layout.names->count;
+
+	return handle < layout.names->count
+		? HANDLE_NAMED
+		: HANDLE_UNNAMED;
 }
 
 // </utils-impl>

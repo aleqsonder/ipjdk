@@ -13,7 +13,7 @@ test/%: LDLIBS+=$(shell pkg-config --libs check)
 test/allocator: src/share/allocator.o
 test/hotel: src/share/hotel.o
 test/strset: $(addprefix src/share/,strset.o allocator.o)
-test/shmem: $(addprefix src/share/,strset.o allocator.o shmem.o) src/windows/shmmap.o
+test/shmem: $(addprefix src/share/,strset.o hotel.o allocator.o shmem.o layout.o) src/windows/shmmap.o
 
 clean:
 	$(FIND) . \( -name "*.o" -or -name "*.exe" \) -delete
