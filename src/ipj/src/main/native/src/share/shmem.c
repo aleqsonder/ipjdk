@@ -136,21 +136,25 @@ ssize_t ipj_shm_provide(const char *name, size_t *size, bool *is_new) {
 
 void ipj_shm_release(ssize_t handle) {
 	struct shunit *unit = NULL;
+	bool is_last_ref = false;
 
 	size_t index;
 	switch (decode_handle(handle, &index)) {
 	case HANDLE_UNNAMED:
 		unit = resolve_offset(layout.hotel->rooms[index]);
+		is_last_ref = --unit->refcount == 0;
 		break;
 	case HANDLE_NAMED:
 		unit = resolve_offset(layout.named_unit_offsets[index]);
-		ipj_strset_erase(layout.names, layout.allocator, index);
+		is_last_ref = --unit->refcount == 0;
+		if (is_last_ref)
+			ipj_strset_erase(layout.names, layout.allocator, index);
 		break;
 	default:
 		unit = NULL;
 	}
 
-	if (unit)
+	if (unit && is_last_ref)
 		ipj_free(layout.allocator, unit);
 }
 
